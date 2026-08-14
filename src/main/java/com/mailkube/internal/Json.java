@@ -1,5 +1,6 @@
 package com.mailkube.internal;
 
+import com.mailkube.exception.MailkubeException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,6 +72,105 @@ public final class Json {
             case Boolean b -> b.toString();
             case null, default -> null;
         };
+    }
+
+    /**
+     * Decode a JSON object, refusing anything that is not one.
+     *
+     * <p>The counterpart to {@link #decodeObject(String)}, and the direction matters. Leniency is
+     * right for an <i>error</i> body: a proxy answering 502 with an HTML page must still map by
+     * status rather than raising a parse error over the top of the real failure. It is wrong for a
+     * <i>success</i> body, where a malformed payload silently becomes an empty model — a listing
+     * with no rows reads exactly like a listing the server said was empty.
+     *
+     * <p>The contract is explicit that a 2xx body of an unexpected shape is not an API error, so
+     * this raises the base type rather than an {@code ApiException}.
+     *
+     * @param raw the response body
+     * @param status the status the body arrived with, for the message
+     * @return the decoded object
+     * @throws MailkubeException if the body is absent, malformed, or not a JSON object
+     */
+    public static Map<String, Object> decodeObjectOrThrow(String raw, int status) {
+        if (raw == null || raw.isBlank()) {
+            throw new MailkubeException("expected a JSON object from a " + status + " response, got an empty body");
+        }
+        Object parsed;
+        try {
+            parsed = new Parser(raw).parseValue();
+        } catch (RuntimeException e) {
+            throw new MailkubeException("expected a JSON object from a " + status + " response: " + e.getMessage(), e);
+        }
+        if (parsed instanceof Map<?, ?> map) {
+            return cast(map);
+        }
+        throw new MailkubeException("expected a JSON object from a " + status + " response");
+    }
+
+    /**
+     * Read a nested object off a decoded body.
+     *
+     * @param body the decoded body
+     * @param key the field name
+     * @return the nested object, or an empty map when absent or not an object
+     */
+    public static Map<String, Object> object(Map<String, Object> body, String key) {
+        return body.get(key) instanceof Map<?, ?> map ? cast(map) : Map.of();
+    }
+
+    /**
+     * Read an array off a decoded body.
+     *
+     * @param body the decoded body
+     * @param key the field name
+     * @return the array, or an empty list when absent or not an array
+     */
+    public static List<Object> list(Map<String, Object> body, String key) {
+        return body.get(key) instanceof List<?> list ? List.copyOf(list) : List.of();
+    }
+
+    /**
+     * Read an array of objects off a decoded body.
+     *
+     * <p>Entries that are not objects are skipped rather than raising: an already-released client
+     * must not break on a payload it has not seen.
+     *
+     * @param body the decoded body
+     * @param key the field name
+     * @return the objects, in order
+     */
+    public static List<Map<String, Object>> objects(Map<String, Object> body, String key) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object entry : list(body, key)) {
+            if (entry instanceof Map<?, ?> map) {
+                out.add(cast(map));
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * Read a whole number off a decoded body.
+     *
+     * @param body the decoded body
+     * @param key the field name
+     * @param fallback the value to use when the field is absent or not a number
+     * @return the number, or {@code fallback}
+     */
+    public static int integer(Map<String, Object> body, String key, int fallback) {
+        return body.get(key) instanceof Number number ? number.intValue() : fallback;
+    }
+
+    /**
+     * Read a boolean off a decoded body.
+     *
+     * @param body the decoded body
+     * @param key the field name
+     * @param fallback the value to use when the field is absent or not a boolean
+     * @return the boolean, or {@code fallback}
+     */
+    public static boolean bool(Map<String, Object> body, String key, boolean fallback) {
+        return body.get(key) instanceof Boolean value ? value : fallback;
     }
 
     @SuppressWarnings("unchecked")

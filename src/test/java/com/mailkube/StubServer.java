@@ -25,8 +25,14 @@ final class StubServer implements AutoCloseable {
     private final HttpServer server;
     private final List<Request> received = new CopyOnWriteArrayList<>();
 
-    /** One request as the server saw it. */
-    record Request(String method, String path, Map<String, List<String>> headers, String body) {
+    /**
+     * One request as the server saw it.
+     *
+     * <p>{@code query} is the <b>raw</b> query string, so an assertion can see the percent
+     * encoding the SDK produced. Decoding it here would hide exactly the bug worth catching:
+     * a comma or slash that reached the wire unencoded and re-targeted the request.
+     */
+    record Request(String method, String path, String query, Map<String, List<String>> headers, String body) {
 
         /**
          * Look a header up case-insensitively.
@@ -86,6 +92,7 @@ final class StubServer implements AutoCloseable {
         Request request = new Request(
                 exchange.getRequestMethod(),
                 exchange.getRequestURI().getPath(),
+                exchange.getRequestURI().getRawQuery(),
                 Map.copyOf(exchange.getRequestHeaders()),
                 body);
         received.add(request);

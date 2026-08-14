@@ -1,7 +1,6 @@
 package com.mailkube.model;
 
 import java.time.Instant;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
@@ -22,8 +21,6 @@ import java.util.Map;
  * and it means this class has no accessors to write, test or keep in step.
  */
 public final class SendEmailParams {
-
-    private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_INSTANT;
 
     private final Map<String, Object> body;
     private final String idempotencyKey;
@@ -221,11 +218,29 @@ public final class SendEmailParams {
         /**
          * Schedule the send instead of delivering it now.
          *
-         * @param scheduledAt when the send is due
+         * @param scheduledAt when the send is due, or null to leave the send immediate
          * @return this builder
          */
         public Builder scheduledAt(Instant scheduledAt) {
-            return scheduledAt == null ? this : put("scheduled_at", ISO.format(scheduledAt));
+            return put("scheduled_at", Iso.render(scheduledAt));
+        }
+
+        /**
+         * Schedule the send using a timestamp you already hold as text.
+         *
+         * <p>Passed through unchanged, because a string is already in the wire format and there is
+         * nothing to render. The SDK makes values transmissible, it does not validate them, and the
+         * server's error for a malformed timestamp is the better one.
+         *
+         * <p>Note that {@code scheduledAt(null)} is ambiguous across this overload and
+         * {@link #scheduledAt(Instant)}. Cast the null, or simply omit the call — an unset field is
+         * absent from the wire either way.
+         *
+         * @param scheduledAt when the send is due, or null to leave the send immediate
+         * @return this builder
+         */
+        public Builder scheduledAt(String scheduledAt) {
+            return put("scheduled_at", scheduledAt);
         }
 
         /**

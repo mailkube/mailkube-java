@@ -9,6 +9,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -30,7 +31,7 @@ import java.util.Map;
  *       {@link AutoCloseable} in 21, so an injected client belongs to the caller's lifecycle.
  * </ul>
  */
-public final class HttpTransport implements SendTransport {
+public final class HttpTransport implements SendTransport, ScheduledTransport {
 
     private final Config config;
     private final HttpClient httpClient;
@@ -67,6 +68,16 @@ public final class HttpTransport implements SendTransport {
                 Json.text(payload, "batch_id"));
     }
 
+    @Override
+    public <T> T request(RequestSpec spec, ResponseMapper<T> mapper) {
+        HttpResponse<byte[]> response = roundTrip(spec);
+        // Strict, unlike the send path's tolerant decode: a malformed 2xx body must not become an
+        // empty model. See Json.decodeObjectOrThrow.
+        throwIfNotOk(response);
+        return mapper.map(
+                Json.decodeObjectOrThrow(new String(response.body(), StandardCharsets.UTF_8), response.statusCode()));
+    }
+
     /**
      * Decode the body, mapping any non-2xx status to the matching exception.
      *
@@ -82,12 +93,28 @@ public final class HttpTransport implements SendTransport {
         return payload;
     }
 
+    /**
+     * Raise the mapped exception for a non-2xx response, decoding the error body tolerantly.
+     *
+     * <p>Tolerant on purpose: a proxy answering 502 with an HTML page still has to map by status
+     * rather than raise a parse error over the top of the real failure.
+     */
+    private static void throwIfNotOk(HttpResponse<byte[]> response) {
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            String raw = new String(response.body(), StandardCharsets.UTF_8);
+            throw ApiException.forStatus(envelope(response, Json.decodeObject(raw)));
+        }
+    }
+
     private HttpResponse<byte[]> roundTrip(RequestSpec spec) {
-        HttpRequest.Builder request = HttpRequest.newBuilder(config.buildUrl(spec.path()))
+        HttpRequest.Builder request = HttpRequest.newBuilder(config.buildUrl(spec.path(), spec.query()))
                 .timeout(config.timeout())
                 .method(spec.method(), bodyPublisher(spec));
-        config.defaultHeaders().forEach(request::header);
-        spec.headers().forEach(request::header);
+        // Merged into one map and applied once, because HttpRequest.Builder.header ADDS a value
+        // rather than replacing one. Applying defaults and then spec headers separately sends both
+        // values for any name they share, so a per-request Content-Type never actually overrides
+        // the default — it just arrives alongside it.
+        mergedHeaders(spec).forEach(request::header);
 
         try {
             // ofByteArray, not ofInputStream: see the class comment.
@@ -100,6 +127,19 @@ public final class HttpTransport implements SendTransport {
             Thread.currentThread().interrupt();
             throw new ConnectionException("interrupted while awaiting a response", e);
         }
+    }
+
+    /**
+     * The client defaults with the per-request headers laid over them, last writer winning.
+     *
+     * <p>Case matters here: HTTP header names are case-insensitive but a {@code LinkedHashMap} is
+     * not, so a spec header differing only in case would be added rather than overriding. Matching
+     * a default's spelling is the caller's job, and the defaults use the canonical one.
+     */
+    private Map<String, String> mergedHeaders(RequestSpec spec) {
+        Map<String, String> merged = new LinkedHashMap<>(config.defaultHeaders());
+        merged.putAll(spec.headers());
+        return merged;
     }
 
     private static HttpRequest.BodyPublisher bodyPublisher(RequestSpec spec) {

@@ -1,9 +1,12 @@
 package com.mailkube;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.mailkube.exception.MailkubeException;
 import com.mailkube.internal.Json;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -134,5 +137,45 @@ class JsonTest {
     @Test
     void encodesAnUnrecognizedTypeAsItsStringForm() {
         assertTrue(Json.encode(Map.of("k", java.time.Month.MAY)).contains("\"MAY\""));
+    }
+
+    @Test
+    void refusesAMalformedOrNonObjectSuccessBody() {
+        // Strict, unlike decodeObject. A malformed 2xx body that decoded to an empty map would read
+        // exactly like a listing the server said was empty.
+        assertThrows(MailkubeException.class, () -> Json.decodeObjectOrThrow("<html>", 200));
+        assertThrows(MailkubeException.class, () -> Json.decodeObjectOrThrow("[1,2]", 200));
+        assertThrows(MailkubeException.class, () -> Json.decodeObjectOrThrow("", 200));
+        assertThrows(MailkubeException.class, () -> Json.decodeObjectOrThrow(null, 200));
+        assertEquals(Map.of("a", "b"), Json.decodeObjectOrThrow("{\"a\":\"b\"}", 200));
+    }
+
+    @Test
+    void readsNestedObjectsAndArraysOffADecodedBody() {
+        Map<String, Object> body = Json.decodeObject(
+                "{\"pagination\":{\"total_count\":7},\"data\":[{\"id\":\"a\"},\"skipped\",{\"id\":\"b\"}]}");
+
+        assertEquals(7, Json.integer(Json.object(body, "pagination"), "total_count", 0));
+        assertEquals(3, Json.list(body, "data").size());
+        // A non-object entry is skipped rather than raising: a released client must not break on a
+        // payload shape it has not seen.
+        assertEquals(
+                List.of("a", "b"),
+                Json.objects(body, "data").stream()
+                        .map(entry -> Json.text(entry, "id"))
+                        .toList());
+    }
+
+    @Test
+    void fallsBackWhenAFieldIsAbsentOrTheWrongType() {
+        Map<String, Object> body = Json.decodeObject("{\"n\":\"not-a-number\",\"b\":\"not-a-bool\"}");
+
+        assertEquals(Map.of(), Json.object(body, "missing"));
+        assertEquals(List.of(), Json.list(body, "missing"));
+        assertEquals(List.of(), Json.objects(body, "missing"));
+        assertEquals(-1, Json.integer(body, "n", -1));
+        assertEquals(-1, Json.integer(body, "missing", -1));
+        assertTrue(Json.bool(body, "b", true));
+        assertFalse(Json.bool(body, "missing", false));
     }
 }

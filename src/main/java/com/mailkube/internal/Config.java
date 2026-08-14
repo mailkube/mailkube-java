@@ -101,7 +101,27 @@ public final class Config {
      * @return the absolute URL to request
      */
     public URI buildUrl(String path) {
-        URI resolved = baseUrl.resolve(parse(path));
+        return buildUrl(path, Map.of());
+    }
+
+    /**
+     * Join a relative path and its filters onto the base URL, refusing any absolute URL off its
+     * origin.
+     *
+     * <p>The origin guard lives here rather than in a resource so that every link-following feature
+     * inherits it. A paginated listing follows the server's {@code next} link, and a link naming a
+     * foreign host would hand that host the API key.
+     *
+     * @param path a relative path, or an absolute URL the API itself issued
+     * @param query the filters, already stringified; empty to send none
+     * @return the absolute URL to request
+     */
+    public URI buildUrl(String path, Map<String, String> query) {
+        String rendered = Query.render(query);
+        // A server-issued pagination link already carries its own query; appending to it would
+        // produce two `?` and a route nobody serves. Filters only apply to a path we built.
+        String target = rendered == null ? path : path + (path.indexOf('?') < 0 ? "?" : "&") + rendered;
+        URI resolved = baseUrl.resolve(parse(target));
         boolean sameOrigin = Objects.equals(resolved.getScheme(), baseUrl.getScheme())
                 && Objects.equals(resolved.getHost(), baseUrl.getHost())
                 && resolved.getPort() == baseUrl.getPort();

@@ -106,13 +106,34 @@ class EmailsTest {
 
     @Test
     void treatsNullCollectionsAsAbsent() {
+        // The null is cast because scheduledAt is overloaded on Instant and String, so a bare null
+        // does not name a method. Both overloads omit the field, which is what this asserts.
         RequestSpec spec = capture(ClientTest.minimal()
                 .attachments(null)
                 .tags(null)
-                .scheduledAt(null)
+                .scheduledAt((Instant) null)
                 .build());
 
         assertEquals(List.of("from", "to", "subject"), List.copyOf(spec.body().keySet()));
+
+        RequestSpec fromText =
+                capture(ClientTest.minimal().scheduledAt((String) null).build());
+        assertEquals(
+                List.of("from", "to", "subject"), List.copyOf(fromText.body().keySet()));
+    }
+
+    @Test
+    void rendersAnInstantAndAPreformattedStringToTheSameWireValue() {
+        // The contract requires both inbound forms to go through one serializer. Two formatters is
+        // how two verbs start disagreeing about what a timestamp looks like, invisibly.
+        RequestSpec fromInstant = capture(ClientTest.minimal()
+                .scheduledAt(Instant.parse("2026-01-02T03:04:05Z"))
+                .build());
+        RequestSpec fromText =
+                capture(ClientTest.minimal().scheduledAt("2026-01-02T03:04:05Z").build());
+
+        assertEquals(fromInstant.body().get("scheduled_at"), fromText.body().get("scheduled_at"));
+        assertEquals("2026-01-02T03:04:05Z", fromText.body().get("scheduled_at"));
     }
 
     @Test
