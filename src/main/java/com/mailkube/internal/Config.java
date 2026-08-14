@@ -5,6 +5,7 @@ import com.mailkube.exception.ConfigurationException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -23,6 +24,12 @@ public final class Config {
     /** Environment variable overriding the API base URL. */
     public static final String ENV_BASE_URL = "MAILKUBE_BASE_URL";
 
+    /** Environment variable enabling the built-in logging observer, holding a level name. */
+    public static final String ENV_LOG = "MAILKUBE_LOG";
+
+    /** The level {@value #ENV_LOG} falls back to when its value names no level. */
+    public static final System.Logger.Level DEFAULT_LOG_LEVEL = System.Logger.Level.DEBUG;
+
     /** The API base URL used when nothing else is configured. */
     public static final String DEFAULT_BASE_URL = "https://api.mailkube.com/mta/v1/";
 
@@ -32,6 +39,7 @@ public final class Config {
     private final String apiKey;
     private final URI baseUrl;
     private final Duration timeout;
+    private final System.Logger.Level logLevel;
 
     /**
      * Resolve configuration from the arguments, then the environment, then the defaults.
@@ -39,9 +47,15 @@ public final class Config {
      * @param apiKey the API key, or null to read {@value #ENV_API_KEY}
      * @param baseUrl the API base URL, or null to read {@value #ENV_BASE_URL}
      * @param timeout the per-request timeout, or null for thirty seconds
+     * @param logLevel the level to log exchanges at, or null to read {@value #ENV_LOG}
      * @param environment the environment lookup, injected so it can be driven from a test
      */
-    public Config(String apiKey, String baseUrl, Duration timeout, Map<String, String> environment) {
+    public Config(
+            String apiKey,
+            String baseUrl,
+            Duration timeout,
+            System.Logger.Level logLevel,
+            Map<String, String> environment) {
         String key = apiKey != null ? apiKey : environment.get(ENV_API_KEY);
         if (key == null || key.isEmpty()) {
             throw new ConfigurationException("no API key provided: pass apiKey(...) or set " + ENV_API_KEY);
@@ -50,6 +64,7 @@ public final class Config {
         this.apiKey = key;
         this.baseUrl = parse(resolved);
         this.timeout = Objects.requireNonNullElse(timeout, DEFAULT_TIMEOUT);
+        this.logLevel = logLevel != null ? logLevel : levelFromEnvironment(environment.get(ENV_LOG));
     }
 
     /**
@@ -68,6 +83,15 @@ public final class Config {
      */
     public Duration timeout() {
         return timeout;
+    }
+
+    /**
+     * The level to log exchanges at.
+     *
+     * @return the level, or null when logging was not asked for
+     */
+    public System.Logger.Level logLevel() {
+        return logLevel;
     }
 
     /**
@@ -130,6 +154,25 @@ public final class Config {
                     "refusing to follow " + resolved + ": it is not on the configured API origin");
         }
         return resolved;
+    }
+
+    /**
+     * Read {@value #ENV_LOG} as a level name, tolerating anything it does not recognize.
+     *
+     * <p>It is a level, not a switch, so {@code MAILKUBE_LOG=WARNING} really does suppress the
+     * quieter records rather than merely turning logging on. An unrecognized value falls back to
+     * {@link #DEFAULT_LOG_LEVEL} instead of raising: an environment variable that decides how
+     * loudly to log must not be able to stop a client being built.
+     */
+    private static System.Logger.Level levelFromEnvironment(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return System.Logger.Level.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return DEFAULT_LOG_LEVEL;
+        }
     }
 
     private static URI parse(String value) {

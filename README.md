@@ -105,6 +105,43 @@ Categories: `BadRequestException` (400), `AuthenticationException` (403), `NotFo
 `ServerException` (5xx), and `ApiException` for anything else, which is also the supertype of all of
 them. A transport failure raises `ConnectionException` and is deliberately **not** an API error.
 
+### Logging
+
+Silent unless you ask. Turn on one line per exchange with a level:
+
+```java
+var client = MailkubeClient.builder()
+    .logging(System.Logger.Level.INFO)
+    .build();
+```
+
+or set `MAILKUBE_LOG` to a **level name**: `MAILKUBE_LOG=DEBUG`, `MAILKUBE_LOG=WARNING`. It is a
+level and not an on/off switch, so `WARNING` really does suppress the quieter records. A value that
+names no level falls back to `DEBUG` rather than refusing to build a client. Records go through
+`System.Logger`, so they land in whatever logging framework your application already runs, with no
+adapter and no extra dependency.
+
+Enabling is **per client**, never per process. Two clients in one application can differ, and no
+library on your classpath can turn logging on for a client it does not own.
+
+Each line carries the method, path, status, request id and elapsed time. **Nothing else, ever.** No
+request body, no response body, no headers. A send body carries recipient addresses, subject lines,
+rendered HTML and template variables, and there is no redaction rule that makes those safe in an
+application log, so this SDK does not log them and ships no redaction helper.
+
+For metrics rather than text, take the same information as a callback:
+
+```java
+var client = MailkubeClient.builder()
+    .observer((method, path, status, requestId, elapsed, error) ->
+        registry.timer("mailkube", "path", path, "status", String.valueOf(status)).record(elapsed))
+    .build();
+```
+
+`error` is non-null only when no response arrived at all. A 4xx or 5xx is a response, so it comes
+through with a status and no error. The observer is called on the thread that made the request, so
+keep it cheap; one that throws is reported and ignored rather than failing your send.
+
 ### Webhooks
 
 `Webhooks.verifySignature` is a dependency-free HMAC check over the **raw** request body. Never

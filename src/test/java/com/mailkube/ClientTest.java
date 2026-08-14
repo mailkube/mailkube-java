@@ -61,7 +61,7 @@ class ClientTest {
 
     @Test
     void resolvesARelativePathAgainstTheBaseUrl() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, NO_ENV);
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, NO_ENV);
 
         assertEquals(
                 "https://api.example.test/v1/emails", config.buildUrl("emails").toString());
@@ -69,7 +69,7 @@ class ClientTest {
 
     @Test
     void refusesAnAbsoluteUrlOnAnotherOrigin() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, NO_ENV);
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, NO_ENV);
 
         ConfigurationException error =
                 assertThrows(ConfigurationException.class, () -> config.buildUrl("https://evil.example/steal"));
@@ -79,7 +79,7 @@ class ClientTest {
 
     @Test
     void allowsAnAbsoluteUrlTheApiItselfIssued() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, NO_ENV);
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, NO_ENV);
         String link = "https://api.example.test/v1/emails?cursor=abc";
 
         assertEquals(link, config.buildUrl(link).toString());
@@ -87,13 +87,13 @@ class ClientTest {
 
     @Test
     void refusesAMalformedBaseUrl() {
-        assertThrows(ConfigurationException.class, () -> new Config("mk_test", "http://a b c", null, NO_ENV));
+        assertThrows(ConfigurationException.class, () -> new Config("mk_test", "http://a b c", null, null, NO_ENV));
     }
 
     @Test
     void appliesTheDefaultTimeoutWhenTheCallerSetsNone() {
-        assertEquals(Config.DEFAULT_TIMEOUT, new Config("mk_test", null, null, NO_ENV).timeout());
-        assertEquals(Duration.ofSeconds(5), new Config("mk_test", null, Duration.ofSeconds(5), NO_ENV).timeout());
+        assertEquals(Config.DEFAULT_TIMEOUT, new Config("mk_test", null, null, null, NO_ENV).timeout());
+        assertEquals(Duration.ofSeconds(5), new Config("mk_test", null, Duration.ofSeconds(5), null, NO_ENV).timeout());
     }
 
     @Test

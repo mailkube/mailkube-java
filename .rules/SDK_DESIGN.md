@@ -176,8 +176,32 @@ exactly the silent way described above. The test ruleset therefore restates its 
 | One version source, read by the User-Agent | `gradle.properties` → jar manifest → `Version.current()` |
 | HTTP client injection and ownership | `Builder.httpClient(...)`, `MailkubeClient.close()` |
 | Webhook signature verification | `Webhooks` (no client instance needed) |
+| Silent-by-default logging, `MAILKUBE_LOG` | `Config.logLevel()`, `LoggingObserver`, `Builder.logging(...)` |
+| Header redaction wherever headers are logged | Vacuous: no header ever reaches a log site. See below |
 | Concurrency safety, proven not asserted | `ConcurrencyTest` |
 | Layering | `module-info.java` (`internal` is not exported) |
+
+## Logging carries no personal data, and that is enforced by the type
+
+**This SDK never logs request or response bodies.** A send body carries recipient addresses,
+subject lines, rendered HTML and template variables. There is no redaction rule that makes those
+safe in an application log, and a partial one is worse than none, because it implies the rest was
+checked. Logging is limited to method, path, status, request id, elapsed time and outcome.
+
+No header map ever reaches a log site, **which is why this SDK ships no redaction helper**. The
+contract's "redact `authorization` and `idempotency-key` wherever headers are logged" is conditional,
+and logging no headers satisfies it in full. A redaction class here would have no call site: dead
+code that still has to clear a 90% branch gate, and a standing invitation to start logging headers
+so it has something to do.
+
+`RequestObserver.onResponse` carries neither bodies nor headers, so this holds by the signature
+rather than by discipline. `ObserverTest.tellsAnObserverNothingItCouldLeak` sends a message with a
+real-looking recipient, subject and body and asserts none of them, nor the API key, reaches the
+observer. **Widening rule: the signature may gain outcome and correlation parameters, never a header
+map and never a body.**
+
+Enabling is per client (`Builder.logging`, or `MAILKUBE_LOG`), never a static switch. A static
+enable is process-global mutable state that any library on the classpath could flip for everybody.
 
 ## Tests
 
@@ -197,13 +221,19 @@ else entirely.
 
 Coverage gates **line and branch at 90%**.
 
-## What this SDK does not implement yet
+## Adding the next resource
 
-One resource (`emails.send`) is wired end to end as the worked example. Still to add, each following
-its checklist in `SDK_CONTRACT.md`:
+Two are wired end to end, and between them they demonstrate every shape a third will need:
+`emails.send` for a single verb, and `scheduledEmails` for a collection with sub-resources and a
+paginated listing. Follow the checklist in `SDK_CONTRACT.md`, and copy these four habits:
 
-- **A paginated listing.** Add a verb to `SendTransport`'s sibling interface, a page record, and an
-  `Iterator` or `Stream` over pages. Follow the server's `next` link; `Config.buildUrl` already
-  refuses off-origin links.
-- **The typed webhook event catalogue.** `Webhooks.verifySignature` is complete; add the event
-  records and a `parseEvent` helper.
+- **A narrow transport interface per capability**, never one widened. `SendTransport` and
+  `ScheduledTransport` are separate so a resource depends on the one verb shape it uses.
+- **Wire-to-model mapping lives in the resource**, not on the record. A `from(Map)` factory on an
+  exported record would make the types layer import the internal JSON codec and invert the layering
+  `module-info.java` enforces.
+- **Follow the server's `next` link** rather than incrementing a page counter, so the pagination
+  scheme can change without breaking a released client. `Config.buildUrl` already refuses a link
+  that is not on the configured origin, which is what stops one carrying the API key away.
+- **Timestamps in and out.** Accept both a `String` and an `Instant`, rendered through `Iso`, which
+  is the only `DateTimeFormatter` in the SDK. Read them back as the verbatim strings the API sent.

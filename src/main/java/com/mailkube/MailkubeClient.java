@@ -2,6 +2,7 @@ package com.mailkube;
 
 import com.mailkube.internal.Config;
 import com.mailkube.internal.HttpTransport;
+import com.mailkube.internal.LoggingObserver;
 import com.mailkube.internal.ScheduledTransport;
 import com.mailkube.internal.SendTransport;
 import java.net.http.HttpClient;
@@ -39,12 +40,13 @@ public final class MailkubeClient implements AutoCloseable {
     private final boolean ownsHttpClient;
 
     private MailkubeClient(Builder builder) {
-        Config config = new Config(builder.apiKey, builder.baseUrl, builder.timeout, builder.environment);
+        Config config =
+                new Config(builder.apiKey, builder.baseUrl, builder.timeout, builder.logLevel, builder.environment);
         this.ownsHttpClient = builder.httpClient == null;
         this.httpClient = ownsHttpClient ? defaultHttpClient(config) : builder.httpClient;
         // One transport object satisfies both narrow interfaces. The resources still depend on one
         // interface each, so a test can substitute either capability without touching the other.
-        HttpTransport http = new HttpTransport(config, this.httpClient);
+        HttpTransport http = new HttpTransport(config, this.httpClient, observerFor(builder, config));
         this.emails = new Emails(builder.transport != null ? builder.transport : http);
         this.scheduledEmails =
                 new ScheduledEmails(builder.scheduledTransport != null ? builder.scheduledTransport : http);
@@ -91,6 +93,25 @@ public final class MailkubeClient implements AutoCloseable {
         }
     }
 
+    /**
+     * Decide who hears about each exchange: your observer, the built-in logger, or nobody.
+     *
+     * <p>Precedence is the same one every other setting follows. An observer you supplied wins,
+     * because it is the most explicit thing you said; otherwise a level, from
+     * {@link Builder#logging} or from {@code MAILKUBE_LOG}, installs the built-in logger; otherwise
+     * nothing is notified at all. There is no static enable, so two clients in one process can
+     * differ, and nothing a library does can turn logging on for somebody else's client.
+     */
+    private static RequestObserver observerFor(Builder builder, Config config) {
+        if (builder.observer != null) {
+            return builder.observer;
+        }
+        // A no-op rather than a null the transport would have to test for on every request.
+        return config.logLevel() == null
+                ? (method, path, status, requestId, elapsed, error) -> {}
+                : new LoggingObserver(config.logLevel());
+    }
+
     private static HttpClient defaultHttpClient(Config config) {
         // No .executor(...) call. The default executor is what lets this client behave correctly
         // under virtual threads; supplying a fixed pool reintroduces exactly the bottleneck the
@@ -105,6 +126,8 @@ public final class MailkubeClient implements AutoCloseable {
         private String baseUrl;
         private Duration timeout;
         private HttpClient httpClient;
+        private RequestObserver observer;
+        private System.Logger.Level logLevel;
         private SendTransport transport;
         private ScheduledTransport scheduledTransport;
         private Map<String, String> environment = System.getenv();
@@ -160,6 +183,41 @@ public final class MailkubeClient implements AutoCloseable {
          */
         public Builder httpClient(HttpClient httpClient) {
             this.httpClient = httpClient;
+            return this;
+        }
+
+        /**
+         * Be told about every finished exchange.
+         *
+         * <p>This is the metrics seam: method, path, status, request id, elapsed time and outcome,
+         * and deliberately nothing else. See {@link RequestObserver} for what it is never given and
+         * why. Supplying one replaces the built-in logger, so {@link #logging} has no effect
+         * alongside it.
+         *
+         * @param observer the observer, called on the calling thread
+         * @return this builder
+         */
+        public Builder observer(RequestObserver observer) {
+            this.observer = observer;
+            return this;
+        }
+
+        /**
+         * Log one line per exchange at this level. Falls back to {@code MAILKUBE_LOG}.
+         *
+         * <p>Off unless asked for, and per-client rather than per-process: a static switch would be
+         * global mutable state that any library on the classpath could flip for everyone.
+         *
+         * <p>Records go to {@link System.Logger}, so they arrive in whatever logging framework the
+         * host application has installed. {@code MAILKUBE_LOG} names a level rather than acting as
+         * an on/off switch, so {@code MAILKUBE_LOG=WARNING} suppresses the quieter records; a value
+         * naming no level falls back to {@code DEBUG} rather than refusing to build a client.
+         *
+         * @param level the level to log at
+         * @return this builder
+         */
+        public Builder logging(System.Logger.Level level) {
+            this.logLevel = level;
             return this;
         }
 

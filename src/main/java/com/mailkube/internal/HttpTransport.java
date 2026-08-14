@@ -1,14 +1,17 @@
 package com.mailkube.internal;
 
+import com.mailkube.RequestObserver;
 import com.mailkube.exception.ApiException;
 import com.mailkube.exception.ConnectionException;
 import com.mailkube.exception.ErrorEnvelope;
 import com.mailkube.model.Email;
 import java.io.IOException;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -33,18 +36,23 @@ import java.util.Map;
  */
 public final class HttpTransport implements SendTransport, ScheduledTransport {
 
+    private static final System.Logger LOGGER = System.getLogger("com.mailkube");
+
     private final Config config;
     private final HttpClient httpClient;
+    private final RequestObserver observer;
 
     /**
      * Bind the transport to its configuration and the client it drives.
      *
      * @param config the resolved configuration
      * @param httpClient the client, injected or built by {@code MailkubeClient}
+     * @param observer notified once per exchange; never null, use a no-op instead
      */
-    public HttpTransport(Config config, HttpClient httpClient) {
+    public HttpTransport(Config config, HttpClient httpClient, RequestObserver observer) {
         this.config = config;
         this.httpClient = httpClient;
+        this.observer = observer;
     }
 
     @Override
@@ -107,25 +115,57 @@ public final class HttpTransport implements SendTransport, ScheduledTransport {
     }
 
     private HttpResponse<byte[]> roundTrip(RequestSpec spec) {
-        HttpRequest.Builder request = HttpRequest.newBuilder(config.buildUrl(spec.path(), spec.query()))
-                .timeout(config.timeout())
-                .method(spec.method(), bodyPublisher(spec));
+        URI url = config.buildUrl(spec.path(), spec.query());
+        HttpRequest.Builder request =
+                HttpRequest.newBuilder(url).timeout(config.timeout()).method(spec.method(), bodyPublisher(spec));
         // Merged into one map and applied once, because HttpRequest.Builder.header ADDS a value
         // rather than replacing one. Applying defaults and then spec headers separately sends both
         // values for any name they share, so a per-request Content-Type never actually overrides
         // the default — it just arrives alongside it.
         mergedHeaders(spec).forEach(request::header);
 
+        long startedAt = System.nanoTime();
+        HttpResponse<byte[]> response = null;
+        ConnectionException failure = null;
         try {
             // ofByteArray, not ofInputStream: see the class comment.
-            return httpClient.send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
+            response = httpClient.send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
+            return response;
         } catch (IOException e) {
-            throw new ConnectionException(e.getMessage(), e);
+            failure = new ConnectionException(e.getMessage(), e);
+            throw failure;
         } catch (InterruptedException e) {
             // Restore the flag rather than swallowing it: a caller cancelling a virtual thread
             // must not have that cancellation eaten by this SDK.
             Thread.currentThread().interrupt();
-            throw new ConnectionException("interrupted while awaiting a response", e);
+            failure = new ConnectionException("interrupted while awaiting a response", e);
+            throw failure;
+        } finally {
+            // In a `finally`, so an exchange that produced no response is reported too. That is the
+            // case an observer most needs, and the one a notification on the success path loses.
+            notifyObserver(spec.method(), url, response, failure, System.nanoTime() - startedAt);
+        }
+    }
+
+    /**
+     * Tell the observer what happened, and never let it change the answer.
+     *
+     * <p>An observer is application code on the path of every request. If it throws, the caller
+     * still gets the response or the transport failure that actually occurred: a metrics sink with
+     * a bug must not turn a delivered email into an exception.
+     */
+    private void notifyObserver(
+            String method, URI url, HttpResponse<byte[]> response, Throwable failure, long elapsedNanos) {
+        try {
+            observer.onResponse(
+                    method,
+                    url.getPath(),
+                    response == null ? null : response.statusCode(),
+                    response == null ? null : header(response, "X-Request-Id"),
+                    Duration.ofNanos(elapsedNanos),
+                    failure);
+        } catch (RuntimeException e) {
+            LOGGER.log(System.Logger.Level.WARNING, "a RequestObserver threw and was ignored", e);
         }
     }
 
