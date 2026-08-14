@@ -1,0 +1,64 @@
+name: Release
+
+# Conventional-Commits-driven release: one tag + one GitHub Release, then a signed publish to
+# Maven Central. NOTHING is committed back to `main`; see .rules/RELEASE.md.
+#
+# Maven Central is the ONE registry in this SDK family with no OIDC trusted publishing, so unlike
+# PyPI, npm and RubyGems this job needs long-lived secrets: a Central Portal token and a GPG key.
+# See .rules/RELEASE.md for how to create them.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci-gate:
+    # Release only proceeds if the full gated CI (test + dry + docs) is green.
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # push the tag, create the GitHub Release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      # One step does everything, and only when the commits actually warrant a release:
+      # semantic-release creates the tag and the GitHub Release, and its `publishCmd` runs
+      # `./gradlew publish -Pversion=X.Y.Z`. Nothing is written to the tree, so there is no
+      # `@semantic-release/git` and no commit to `main`. Publishing from `publishCmd` rather
+      # than a following workflow step is what keeps a non-releasing push to `main` from
+      # uploading the `0.0.0` placeholder to Central, which cannot be undone.
+      #
+      # The four secrets are on the whole step because `publishCmd` inherits its environment.
+      - name: Release (semantic-release — tag, GitHub Release, signed publish to Maven Central)
+        run: >-
+          npx --yes
+          -p semantic-release
+          -p @semantic-release/exec
+          semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.GPG_PASSPHRASE }}
+          ORG_GRADLE_PROJECT_centralUsername: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          ORG_GRADLE_PROJECT_centralPassword: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}

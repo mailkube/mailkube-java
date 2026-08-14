@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  # No `push: branches: [main]` trigger on purpose. release.yml already runs this entire workflow
+  # through `workflow_call` on every push to `main`, and both runs land in the same
+  # `ci-${{ github.ref }}` concurrency group with cancel-in-progress. A direct trigger therefore
+  # only ever races the gated one: one of the two is cancelled, and the cancelled run is what the
+  # README's CI badge reports. `main` stays fully covered by release.yml's ci-gate job.
+  pull_request:
+  workflow_call: # so release.yml can gate on the full CI
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor is the only supported version. Java class files cannot load on an earlier JVM,
+        # so "also test 21" is not a thing this library can offer.
+        java-version: ["25"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java-version }}
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Format check (spotless — palantir-java-format)
+        run: ./gradlew spotlessCheck
+
+      - name: Build, lint, test and gate coverage
+        # `check` runs pmdMain, pmdTest, test and jacocoTestCoverageVerification.
+        run: ./gradlew check
+
+      - name: Javadoc
+        run: ./gradlew javadoc
+
+  dry:
+    # Language-agnostic duplication (DRY) gate — identical across every mailkube repo.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - name: Copy-paste detection (jscpd)
+        run: npx --yes jscpd@4 --config .jscpd.json .
+
+  docs:
+    # Governance gate: every .rules/*.md must be indexed in AGENTS.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rule-index sync check
+        run: ./scripts/check-rule-index.sh
