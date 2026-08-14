@@ -64,6 +64,26 @@ tasks.jar {
     }
 }
 
+// ...and it carries the same version as a resource, because the manifest route DOES NOT WORK on the
+// module path. `java.lang.Package`'s own @implNote says builtin loaders define no Package object for
+// a package in a named module, so `getImplementationVersion()` is null there and every JPMS consumer
+// would report `mailkube-java/0.0.0`. This is not a second source of truth: both the manifest
+// attribute and this file are derived from the one Gradle version property, and neither is committed.
+val versionResourceDir = layout.buildDirectory.dir("generated/version")
+
+// `tasks.register`, not the `by tasks.registering` delegate: that delegate is deprecated from
+// Gradle 9.6 and incompatible with Gradle 10, the same reason the signing block avoids `by project`.
+val generateVersionResource =
+    tasks.register<WriteProperties>("generateVersionResource") {
+        destinationFile = versionResourceDir.map { it.file("com/mailkube/version.properties") }
+        comment = "Generated from the Gradle version property. Do not edit, and do not commit."
+        property("version", providers.provider { project.version.toString() })
+    }
+
+sourceSets.main { resources.srcDir(versionResourceDir) }
+
+tasks.processResources { dependsOn(generateVersionResource) }
+
 spotless {
     java {
         // palantir-java-format, NOT google-java-format: the latter needs

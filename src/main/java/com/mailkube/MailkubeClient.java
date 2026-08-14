@@ -5,6 +5,7 @@ import com.mailkube.internal.HttpTransport;
 import com.mailkube.internal.LoggingObserver;
 import com.mailkube.internal.ScheduledTransport;
 import com.mailkube.internal.SendTransport;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Map;
@@ -38,10 +39,12 @@ public final class MailkubeClient implements AutoCloseable {
     private final ScheduledEmails scheduledEmails;
     private final HttpClient httpClient;
     private final boolean ownsHttpClient;
+    private final Config config;
 
     private MailkubeClient(Builder builder) {
         Config config =
                 new Config(builder.apiKey, builder.baseUrl, builder.timeout, builder.logLevel, builder.environment);
+        this.config = config;
         this.ownsHttpClient = builder.httpClient == null;
         this.httpClient = ownsHttpClient ? defaultHttpClient(config) : builder.httpClient;
         // One transport object satisfies both narrow interfaces. The resources still depend on one
@@ -77,6 +80,31 @@ public final class MailkubeClient implements AutoCloseable {
      */
     public ScheduledEmails scheduledEmails() {
         return scheduledEmails;
+    }
+
+    /**
+     * The API origin this client was configured with.
+     *
+     * <p>Read-only, and here for the benefit of the thing that has to report it: a framework health
+     * indicator or a startup check states which API it is talking to, and reading it back beats
+     * having the surrounding application remember what it passed in.
+     *
+     * @return the resolved base URL, whether it came from the builder, the environment or the default
+     */
+    public URI baseUrl() {
+        return config.baseUrl();
+    }
+
+    /**
+     * The timeout applied to every exchange.
+     *
+     * <p>Every request carries it, whichever {@link HttpClient} sends it, so a framework binding a
+     * timeout setting gets that timeout even when it also injects its own instrumented client.
+     *
+     * @return the resolved per-request timeout
+     */
+    public Duration timeout() {
+        return config.timeout();
     }
 
     /**
@@ -174,9 +202,17 @@ public final class MailkubeClient implements AutoCloseable {
         /**
          * Inject the {@link HttpClient} used for every request.
          *
-         * <p>This is the public dependency-inversion seam: pass a client configured with your own
-         * proxy, SSL context or instrumentation. The caller owns its lifecycle, so
-         * {@link MailkubeClient#close()} will not close it.
+         * <p>This is the public dependency-inversion seam, and it is the supported one for three
+         * different jobs: a proxy or SSL context, outbound instrumentation, and substituting the
+         * whole exchange in a test. A delegating client that rebuilds each request through
+         * {@code HttpRequest.newBuilder(HttpRequest, BiPredicate)} is how you add a
+         * {@code traceparent} header without this SDK growing a request-mutation hook of its own.
+         *
+         * <p>Two rules for a decorator: it must not drop the {@code Authorization} header, and it
+         * must not drop or overwrite the {@code User-Agent}, which the API requires and which
+         * identifies the SDK version in server-side traffic.
+         *
+         * <p>The caller owns its lifecycle, so {@link MailkubeClient#close()} will not close it.
          *
          * @param httpClient the client
          * @return this builder
@@ -224,8 +260,16 @@ public final class MailkubeClient implements AutoCloseable {
         /**
          * Read configuration from this map instead of the process environment.
          *
-         * <p>Present so the environment-fallback rules can be tested without mutating the real
-         * environment, which is process-global and hostile to parallel tests.
+         * <p>This replaces the configuration <em>source</em>; it does not disable the fallbacks. A
+         * caller that has its own configuration system, a framework's property resolution for
+         * instance, can point the same rules at it and keep one precedence order for everybody.
+         *
+         * <p>It also means the fallback rules can be tested without mutating the real environment,
+         * which is process-global and hostile to parallel tests.
+         *
+         * <p>An empty map is not the way to make a setting explicit. Leave the setting unset and let
+         * the fallback answer, or pass the value itself: passing {@code Map.of()} only turns off
+         * every environment variable at once, including the ones the caller never meant to disable.
          *
          * @param environment the lookup
          * @return this builder

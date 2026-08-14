@@ -30,6 +30,21 @@ class ClientTest {
     }
 
     @Test
+    void reportsTheConfigurationAHealthCheckHasToShow() {
+        // A framework health indicator states which API it is talking to and how long it waits. It
+        // reads that back from the client rather than from whatever the surrounding code passed in.
+        try (MailkubeClient client = MailkubeClient.builder()
+                .apiKey("mk_test")
+                .environment(Map.of(Config.ENV_BASE_URL, "https://api.example.test/v1/"))
+                .timeout(Duration.ofSeconds(5))
+                .build()) {
+
+            assertEquals("https://api.example.test/v1/", client.baseUrl().toString());
+            assertEquals(Duration.ofSeconds(5), client.timeout());
+        }
+    }
+
+    @Test
     void raisesWhenNoApiKeyIsAvailableAnywhere() {
         ConfigurationException error = assertThrows(
                 ConfigurationException.class,
@@ -50,13 +65,6 @@ class ClientTest {
             assertEquals("application/json", request.header("Accept"));
             assertEquals("mailkube-java/" + Version.current(), request.header("User-Agent"));
         }
-    }
-
-    @Test
-    void reportsThePlaceholderVersionWhenRunningFromBuildOutput() {
-        // There is no jar manifest in a test run, which is the documented fallback rather than a
-        // failure. A released jar carries Implementation-Version and this returns that instead.
-        assertEquals(Version.UNKNOWN, Version.current());
     }
 
     @Test

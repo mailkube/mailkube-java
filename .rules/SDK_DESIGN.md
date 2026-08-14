@@ -173,7 +173,7 @@ exactly the silent way described above. The test ruleset therefore restates its 
 | Status-to-class table | `ApiException.forStatus()` |
 | Idempotency key lifted to a header | `Emails.send()` |
 | ISO-8601 rendering, base64 attachments | `SendEmailParams.Builder` |
-| One version source, read by the User-Agent | `gradle.properties` → jar manifest → `Version.current()` |
+| One version source, read by the User-Agent | `gradle.properties` → generated `version.properties` (and the jar manifest) → `Version.current()` |
 | HTTP client injection and ownership | `Builder.httpClient(...)`, `MailkubeClient.close()` |
 | Webhook signature verification | `Webhooks` (no client instance needed) |
 | Silent-by-default logging, `MAILKUBE_LOG` | `Config.logLevel()`, `LoggingObserver`, `Builder.logging(...)` |
@@ -202,6 +202,85 @@ map and never a body.**
 
 Enabling is per client (`Builder.logging`, or `MAILKUBE_LOG`), never a static switch. A static
 enable is process-global mutable state that any library on the classpath could flip for everybody.
+
+## Framework integration surface
+
+A framework integration is a **separate package that depends on this one**. This section says what
+it may depend on and what it must not, so that both sides can change without guessing.
+
+**Everything about how an integration behaves belongs to `INTEGRATION_CONTRACT.md`**, not here: how
+it maps settings, how it translates errors into the framework's own type, how it structures its
+tests, how it appends its own token to the User-Agent. This file states only what this SDK exports
+for it to build on. One rule, one home.
+
+### What an integration may depend on
+
+The three exported packages, and nothing else: `com.mailkube`, `com.mailkube.exception`,
+`com.mailkube.model`. `com.mailkube.internal` is not exported, so an integration cannot reach the
+transport, the config resolver or the JSON codec even by naming the package. That is deliberate: an
+integration that decoded an error envelope or built a request body itself would be a second wire
+format, drifting silently from this one.
+
+Concretely, the surface an integration is built on is:
+
+- **`MailkubeClient` as a long-lived singleton.** It is `final`, holds no per-request mutable state,
+  is safe to share across threads, and is `AutoCloseable` so a container's shutdown hook maps onto
+  it directly. It closes only an `HttpClient` it created.
+- **`Builder.httpClient(HttpClient)`** for the injected client: proxy, SSL context, instrumentation,
+  and outbound trace propagation. A delegating client that rebuilds each request through
+  `HttpRequest.newBuilder(HttpRequest, BiPredicate)` adds `traceparent` without this SDK growing a
+  request-mutation hook. **An `onRequest(..., headerSink)` is explicitly rejected**: it would turn an
+  observer into a mutator, and it would be a third contributor of headers with no defined precedence
+  against the client defaults and the per-request headers that `HttpTransport` merges in one place.
+- **`RequestObserver`** for metrics: an integration bridges it to whatever its framework records
+  with, and gets a status *or* a `Throwable` on every exchange, including one that never produced a
+  response. It is observe-only; see the logging section above for why.
+- **`Builder.environment(Map)`** as the configuration *source*. An integration whose framework has
+  its own property resolution can point these rules at it. It does **not** pass `Map.of()` to "make
+  the settings explicit": an unset setting is omitted so the SDK's own fallback answers, which is
+  what the integration contract requires, and blanking the map disables every fallback at once.
+- **`baseUrl()` and `timeout()`** for a health indicator or a startup check, so the reporting code
+  reads the resolved configuration back rather than restating what it passed in.
+
+### The integration test seam is the injected `HttpClient`
+
+The integration contract requires an integration to exercise the **real SDK over a stub transport**,
+never a mocked SDK. In Java that seam already exists and is already public: `HttpClient` is an
+abstract class, so a test subclasses it, overrides `send`, and returns a canned `HttpResponse`. The
+real request building, header merging, error mapping and parsing all still run.
+
+So **no new export is added for testing**. `Builder.transport(...)` stays package-private, because
+`SendTransport` lives in an unexported package and a public method taking one would be unusable
+anyway. An integration that prefers a real server over a stubbed client can instead point `baseUrl`
+at a loopback server, which this repo's own `StubServer` does.
+
+### Five JPMS realities to know before writing one
+
+1. **`module-info.java` is inert on the classpath.** It is a compile-time layering gate for
+   module-path builds and a stated contract otherwise. The `internal` package is still reachable by
+   name from a classpath consumer; that it is unexported is what makes doing so unsupported.
+2. **A Spring Boot fat jar is the classpath case.** Boot's launcher does not build a module graph, so
+   nothing in a Boot application is affected by the module descriptor.
+3. **`com.mailkube.spring` is a subpackage, not a split package.** Split packages are the same
+   package in two modules; a *sub*package is unrelated to JPMS. `module com.mailkube.spring
+   { requires com.mailkube; }` is legal, and an integration is free to take that name.
+4. **`requires transitive java.net.http` is load-bearing.** `Builder.httpClient(HttpClient)` is
+   public API, so a consuming module must be able to name `HttpClient` without requiring
+   `java.net.http` itself.
+5. **`Package` versioning metadata does not exist on the module path at all.** The JDK's builtin
+   loaders define no `Package` object carrying a version for a package in a named module, so
+   `getImplementationVersion()` is null there. That is why the version travels as a generated
+   `com/mailkube/version.properties` resource read *before* the manifest: without it every JPMS
+   consumer would report `mailkube-java/0.0.0` on the wire, which is the exact drift the contract's
+   one-version-source rule exists to prevent. Both sources still derive from the single Gradle
+   version property; what the contract forbids is a committed literal, not a second generated copy.
+
+### The Java 25 floor reaches the integration
+
+An integration inherits the floor: it requires JVM 25 too, and a Spring Boot one must override
+`spring-boot-starter-parent`'s `java.version`, whose baseline is 17. The justification is above,
+under "The Java 25 floor is load-bearing": below JDK 24 the synchronous-plus-virtual-threads design
+this SDK is built on quietly degrades to a thread pool.
 
 ## Tests
 
