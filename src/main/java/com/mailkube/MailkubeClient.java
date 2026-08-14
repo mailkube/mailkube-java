@@ -2,6 +2,7 @@ package com.mailkube;
 
 import com.mailkube.internal.Config;
 import com.mailkube.internal.HttpTransport;
+import com.mailkube.internal.ScheduledTransport;
 import com.mailkube.internal.SendTransport;
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -33,6 +34,7 @@ import java.util.Map;
 public final class MailkubeClient implements AutoCloseable {
 
     private final Emails emails;
+    private final ScheduledEmails scheduledEmails;
     private final HttpClient httpClient;
     private final boolean ownsHttpClient;
 
@@ -40,9 +42,12 @@ public final class MailkubeClient implements AutoCloseable {
         Config config = new Config(builder.apiKey, builder.baseUrl, builder.timeout, builder.environment);
         this.ownsHttpClient = builder.httpClient == null;
         this.httpClient = ownsHttpClient ? defaultHttpClient(config) : builder.httpClient;
-        SendTransport transport =
-                builder.transport != null ? builder.transport : new HttpTransport(config, this.httpClient);
-        this.emails = new Emails(transport);
+        // One transport object satisfies both narrow interfaces. The resources still depend on one
+        // interface each, so a test can substitute either capability without touching the other.
+        HttpTransport http = new HttpTransport(config, this.httpClient);
+        this.emails = new Emails(builder.transport != null ? builder.transport : http);
+        this.scheduledEmails =
+                new ScheduledEmails(builder.scheduledTransport != null ? builder.scheduledTransport : http);
     }
 
     /**
@@ -61,6 +66,15 @@ public final class MailkubeClient implements AutoCloseable {
      */
     public Emails emails() {
         return emails;
+    }
+
+    /**
+     * The scheduled-emails namespace.
+     *
+     * @return the resource
+     */
+    public ScheduledEmails scheduledEmails() {
+        return scheduledEmails;
     }
 
     /**
@@ -92,6 +106,7 @@ public final class MailkubeClient implements AutoCloseable {
         private Duration timeout;
         private HttpClient httpClient;
         private SendTransport transport;
+        private ScheduledTransport scheduledTransport;
         private Map<String, String> environment = System.getenv();
 
         private Builder() {}
@@ -176,6 +191,21 @@ public final class MailkubeClient implements AutoCloseable {
          */
         Builder transport(SendTransport transport) {
             this.transport = transport;
+            return this;
+        }
+
+        /**
+         * Replace the transport backing the scheduled-emails resource.
+         *
+         * <p>A second setter rather than one taking both capabilities: they are separate interfaces
+         * precisely so a caller can depend on one of them, and a test that substitutes sending has
+         * no business also substituting listing.
+         *
+         * @param transport the transport
+         * @return this builder
+         */
+        Builder scheduledTransport(ScheduledTransport transport) {
+            this.scheduledTransport = transport;
             return this;
         }
 

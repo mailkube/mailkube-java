@@ -92,19 +92,35 @@ public final class Json {
      * @throws MailkubeException if the body is absent, malformed, or not a JSON object
      */
     public static Map<String, Object> decodeObjectOrThrow(String raw, int status) {
+        return decodeObjectOrThrow(raw, "a " + status + " response");
+    }
+
+    /**
+     * Decode a JSON object that did not arrive as an HTTP response body.
+     *
+     * <p>Same strictness as {@link #decodeObjectOrThrow(String, int)}, which delegates here. The
+     * source is named only so the message says what failed to parse: a webhook payload and a
+     * response body fail in the same way but are debugged in very different places.
+     *
+     * @param raw the text to decode
+     * @param source what it is, for the message, e.g. {@code "the webhook payload"}
+     * @return the decoded object
+     * @throws MailkubeException if the text is absent, malformed, or not a JSON object
+     */
+    public static Map<String, Object> decodeObjectOrThrow(String raw, String source) {
         if (raw == null || raw.isBlank()) {
-            throw new MailkubeException("expected a JSON object from a " + status + " response, got an empty body");
+            throw new MailkubeException("expected a JSON object from " + source + ", got an empty body");
         }
         Object parsed;
         try {
             parsed = new Parser(raw).parseValue();
         } catch (RuntimeException e) {
-            throw new MailkubeException("expected a JSON object from a " + status + " response: " + e.getMessage(), e);
+            throw new MailkubeException("expected a JSON object from " + source + ": " + e.getMessage(), e);
         }
         if (parsed instanceof Map<?, ?> map) {
             return cast(map);
         }
-        throw new MailkubeException("expected a JSON object from a " + status + " response");
+        throw new MailkubeException("expected a JSON object from " + source);
     }
 
     /**

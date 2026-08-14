@@ -1,6 +1,8 @@
 package com.mailkube;
 
 import com.mailkube.exception.SignatureVerificationException;
+import com.mailkube.internal.EventCatalogue;
+import com.mailkube.model.WebhookEvent;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -71,6 +73,29 @@ public final class Webhooks {
         checkFreshness(timestamp, tolerance);
         checkSignature(payload, id, timestamp, signature, secret);
         return payload;
+    }
+
+    /**
+     * Parse a webhook payload into its typed event.
+     *
+     * <p>Verify first. This method does no verification of its own, deliberately: the two steps are
+     * separate so that parsing an unverified body is something you have to write down rather than
+     * something you get by accident. Both compose in one expression:
+     *
+     * <pre>{@code
+     * WebhookEvent event = Webhooks.parseEvent(Webhooks.verifySignature(raw, headers, secret));
+     * }</pre>
+     *
+     * <p>A {@code type} this release does not recognize parses as {@code UnknownEvent} rather than
+     * raising, so a new platform event never breaks a receiver that has not upgraded. A payload
+     * that is not a JSON object at all does raise: that is a malformed request, not a new event.
+     *
+     * @param payload the raw request body, verified
+     * @return the typed event
+     * @throws com.mailkube.exception.MailkubeException if the payload is not a JSON object
+     */
+    public static WebhookEvent parseEvent(byte[] payload) {
+        return EventCatalogue.parse(payload);
     }
 
     private static void checkFreshness(String timestamp, Duration tolerance) {
