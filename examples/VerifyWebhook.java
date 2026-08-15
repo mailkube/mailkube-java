@@ -11,8 +11,9 @@
 // The body must be the EXACT bytes the server sent — re-serializing parsed JSON will not reproduce
 // the signature, which is the single most common integration bug.
 //
-// Examples are excluded from lint, coverage and the duplication gate: they exist to be read and
-// run, not to be shipped. Gradle never compiles this directory.
+// Examples are compiled by CI (javac, against the built jar) and checked by `pmdExamples`, because
+// they are copied by customers. They are not a Gradle source set, so they never reach the jar or
+// the coverage denominator — nothing in CI runs them.
 
 import com.mailkube.Webhooks;
 import com.mailkube.exception.SignatureVerificationException;
@@ -32,34 +33,9 @@ void main(String[] args) throws IOException {
 
     int failures = 0;
     for (String path : args) {
-        String raw = Files.readString(Path.of(path));
-        String name = stringField(raw, "name");
-        String secret = stringField(raw, "secret");
-        String body = stringField(raw, "body");
-        boolean mustVerify = raw.contains("\"must_verify\": true");
-
-        Map<String, String> headers = new HashMap<>();
-        for (String header : new String[] {"X-Webhook-Id", "X-Webhook-Ts", "X-Webhook-Sig"}) {
-            headers.put(header, stringField(raw, header));
-        }
-
-        boolean verified = true;
-        String detail;
-        try {
-            WebhookEvent event = Webhooks.parseEvent(
-                    Webhooks.verifySignature(body.getBytes(StandardCharsets.UTF_8), headers, secret));
-            detail = "event " + event.type();
-        } catch (SignatureVerificationException e) {
-            verified = false;
-            detail = e.getMessage();
-        }
-
-        boolean ok = verified == mustVerify;
-        if (!ok) {
+        if (!check(path)) {
             failures++;
         }
-        System.out.println((ok ? "ok   " : "BAD  ") + name + ": " + (verified ? "verified" : "rejected")
-                + " (expected " + (mustVerify ? "verified" : "rejected") + ") " + detail);
     }
 
     if (failures > 0) {
@@ -69,7 +45,37 @@ void main(String[] args) throws IOException {
     System.out.println("all fixtures behaved as expected");
 }
 
-// A three-line JSON string reader, so this example stays dependency-free like the SDK itself.
+// Reads one fixture and reports whether it behaved as the fixture says it should.
+static boolean check(String path) throws IOException {
+    String raw = Files.readString(Path.of(path));
+    String secret = stringField(raw, "secret");
+    String body = stringField(raw, "body");
+    boolean mustVerify = raw.contains("\"must_verify\": true");
+
+    Map<String, String> headers = new HashMap<>();
+    for (String header : new String[] {"X-Webhook-Id", "X-Webhook-Ts", "X-Webhook-Sig"}) {
+        headers.put(header, stringField(raw, header));
+    }
+
+    boolean verified = true;
+    String detail;
+    try {
+        WebhookEvent event = Webhooks.parseEvent(
+                Webhooks.verifySignature(body.getBytes(StandardCharsets.UTF_8), headers, secret));
+        detail = "event " + event.type();
+    } catch (SignatureVerificationException e) {
+        verified = false;
+        detail = e.getMessage();
+    }
+
+    boolean ok = verified == mustVerify;
+    System.out.println((ok ? "ok   " : "BAD  ") + stringField(raw, "name") + ": "
+            + (verified ? "verified" : "rejected") + " (expected " + (mustVerify ? "verified" : "rejected") + ") "
+            + detail);
+    return ok;
+}
+
+// A minimal JSON string reader, so this example stays dependency-free like the SDK itself.
 // Real code uses whatever JSON library the application already has.
 static String stringField(String json, String key) {
     int at = json.indexOf('"' + key + '"');
@@ -80,25 +86,31 @@ static String stringField(String json, String key) {
     StringBuilder out = new StringBuilder();
     for (int i = start; i < json.length(); i++) {
         char c = json.charAt(i);
-        if (c == '\\') {
-            char next = json.charAt(++i);
-            out.append(switch (next) {
-                case 'n' -> '\n';
-                case 't' -> '\t';
-                case 'r' -> '\r';
-                case 'b' -> '\b';
-                case 'f' -> '\f';
-                case 'u' -> (char) Integer.parseInt(json.substring(i + 1, i + 5), 16);
-                default -> next;
-            });
-            if (next == 'u') {
-                i += 4;
-            }
-        } else if (c == '"') {
+        if (c == '"') {
             break;
-        } else {
+        }
+        if (c != '\\') {
             out.append(c);
+        } else if (json.charAt(++i) == 'u') {
+            out.append((char) Integer.parseInt(json.substring(i + 1, i + 5), 16));
+            i += 4;
+        } else {
+            out.append(unescape(json.charAt(i)));
         }
     }
     return out.toString();
+}
+
+// The one-character JSON escapes. The four-hex-digit form is handled by the caller, which also has
+// to skip its digits. (It cannot be named in this comment: javac processes unicode escapes inside
+// comments too, so writing it here is a compile error.)
+static char unescape(char escaped) {
+    return switch (escaped) {
+        case 'n' -> '\n';
+        case 't' -> '\t';
+        case 'r' -> '\r';
+        case 'b' -> '\b';
+        case 'f' -> '\f';
+        default -> escaped;
+    };
 }

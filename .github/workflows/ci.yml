@@ -70,6 +70,43 @@ jobs:
   # so there are no declared lower bounds to resolve down to. That is a property worth
   # keeping — add the job the day an `implementation` line appears. See .rules/CI_GATES.md.
 
+  examples:
+    # `examples/` is runnable documentation, and customers copy it. It is not a Gradle source set
+    # — deliberately, so it never reaches the jar or the coverage denominator — which also means
+    # `./gradlew check` never compiles it. javac does, here, against the jar a consumer would get,
+    # so an API change cannot silently rot the docs. `pmdExamples` (wired into `check`) covers
+    # complexity and dead code; spotless covers whitespace. Nothing in CI RUNS an example: that
+    # would need live credentials.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile the examples (javac, against the built jar)
+        # The same script the pre-commit hook runs, so local and CI cannot drift. It pins the jar
+        # name rather than globbing it (`build/libs/mailkube-java-*.jar` also matches the sources
+        # and javadoc jars once a publish task has run, and javac would read those as inputs),
+        # asserts the file count, and needs no `--enable-preview` — JEP 512 compact source files
+        # are final in Java 25.
+        run: ./scripts/compile-examples.sh
+
+      - name: PMD parsed every example
+        # `pmdExamples` runs inside `check`, but the Gradle Pmd task EXITS 0 while printing a
+        # ParseException or MalformedSourceException — it skips the file it cannot read and
+        # reports no violations, so the gate silently switches off for exactly the files most
+        # likely to be broken. Verified: a stray unicode escape in a comment produced
+        # "MalformedSourceException" and BUILD SUCCESSFUL. This step is what makes that fail.
+        run: |
+          ./gradlew pmdExamples --rerun-tasks 2>&1 | tee pmd-examples.log
+          if grep -qE 'ParseException|MalformedSourceException|Cannot load ruleset|No files to analyze' pmd-examples.log; then
+            echo "pmdExamples did not actually analyze the examples — see above"
+            exit 1
+          fi
+
   dry:
     # Language-agnostic duplication (DRY) gate — identical across every mailkube repo.
     runs-on: ubuntu-latest
@@ -80,6 +117,13 @@ jobs:
           node-version: "20"
       - name: Copy-paste detection (jscpd)
         run: npx --yes jscpd@4 --config .jscpd.json .
+      # Examples are excluded from the run above and measured here instead, at a higher
+      # minTokens. Every example repeats the same scaffolding — import, read MAILKUBE_FROM,
+      # build the client, catch ApiException — and deduping that into a shared helper would defeat
+      # the point of a file you can read top to bottom and paste into your own project. 100 tokens
+      # is past that boilerplate (the cliff is at 90) while still catching a copy-pasted example.
+      - name: Copy-paste detection across examples (jscpd)
+        run: npx --yes jscpd@4 --config .jscpd.examples.json examples/
 
   docs:
     # Governance gate: every .rules/*.md must be indexed in AGENTS.md.

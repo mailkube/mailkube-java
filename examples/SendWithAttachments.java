@@ -10,8 +10,9 @@
 // With no file argument the example builds a tiny valid PDF in memory, so it runs without you
 // having to find a file first.
 //
-// Examples are excluded from lint, coverage and the duplication gate: they exist to be read and
-// run, not to be shipped. Gradle never compiles this directory.
+// Examples are compiled by CI (javac, against the built jar) and checked by `pmdExamples`, because
+// they are copied by customers. They are not a Gradle source set, so they never reach the jar or
+// the coverage denominator — nothing in CI runs them.
 
 import com.mailkube.MailkubeClient;
 import com.mailkube.exception.MailkubeException;
@@ -24,20 +25,23 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-// The smallest thing a PDF reader will still open, so the example has something real to attach.
-static final byte[] MINIMAL_PDF = ("%PDF-1.4\n"
-        + "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-        + "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-        + "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 50]>>endobj\n"
-        + "trailer<</Root 1 0 R>>\n%%EOF\n").getBytes(StandardCharsets.US_ASCII);
-
 void main(String[] args) throws IOException {
     if (args.length == 0) {
         System.err.println("usage: java examples/SendWithAttachments.java <recipient@example.com> [file]");
         System.exit(2);
     }
 
-    byte[] content = MINIMAL_PDF;
+    // The smallest thing a PDF reader will still open, so the example has something real to
+    // attach. Declared inside main rather than as a top-level field: PMD 7.26.0 cannot parse a
+    // top-level field in a compact source file (JEP 512) and silently analyzes nothing.
+    byte[] minimalPdf = ("%PDF-1.4\n"
+                    + "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+                    + "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+                    + "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 50]>>endobj\n"
+                    + "trailer<</Root 1 0 R>>\n%%EOF\n")
+            .getBytes(StandardCharsets.US_ASCII);
+
+    byte[] content = minimalPdf;
     String filename = "invoice.pdf";
     if (args.length > 1) {
         content = Files.readAllBytes(Path.of(args[1]));

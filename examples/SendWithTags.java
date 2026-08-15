@@ -10,8 +10,9 @@
 // The server's limits: at most 20 tags, names unique within a message, name at most 16 characters
 // and value at most 32, both drawn from [A-Za-z0-9_-]. A value may be empty; the name may not.
 //
-// Examples are excluded from lint, coverage and the duplication gate: they exist to be read and
-// run, not to be shipped. Gradle never compiles this directory.
+// Examples are compiled by CI (javac, against the built jar) and checked by `pmdExamples`, because
+// they are copied by customers. They are not a Gradle source set, so they never reach the jar or
+// the coverage denominator — nothing in CI runs them.
 
 import com.mailkube.MailkubeClient;
 import com.mailkube.exception.MailkubeException;

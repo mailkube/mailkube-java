@@ -20,11 +20,19 @@ repos:
         language: system
         types: [java]
         pass_filenames: false
+      # `check` now includes pmdExamples, so a change under examples/ is covered here. It does
+      # NOT compile them — examples are not a source set — which is what the next hook is for.
       - id: gradle-check
-        name: gradle check (pmd + tests + coverage)
+        name: gradle check (pmd main/test/examples + tests + coverage)
         entry: ./gradlew check
         language: system
         types: [java]
+        pass_filenames: false
+      - id: examples-compile
+        name: examples compile (javac against the built jar)
+        entry: ./scripts/compile-examples.sh
+        language: system
+        files: ^examples/.*\.java$
         pass_filenames: false
 
   # Language-agnostic DRY gate — identical config in every mailkube repo.
@@ -33,6 +41,11 @@ repos:
       - id: jscpd
         name: jscpd (copy-paste detector)
         entry: npx --yes jscpd@4 --config .jscpd.json .
+        language: system
+        pass_filenames: false
+      - id: jscpd-examples
+        name: jscpd (examples, higher threshold)
+        entry: npx --yes jscpd@4 --config .jscpd.examples.json examples/
         language: system
         pass_filenames: false
 

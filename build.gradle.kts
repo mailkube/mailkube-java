@@ -97,6 +97,18 @@ spotless {
         trimTrailingWhitespace()
         endWithNewline()
     }
+    // Examples get whitespace hygiene only, and the reason is a hard tooling limit rather than a
+    // preference: they are JEP 512 compact source files (no class declaration, a top-level
+    // `void main`), and palantir-java-format 2.97.0 — the newest release — cannot PARSE them.
+    // Pointing the `java` block at examples/ would turn spotlessCheck and the spotlessApply
+    // pre-commit hook permanently red with no upgrade available. Substance is covered instead by
+    // javac -Xlint:all -Werror and `pmdExamples` below.
+    format("examplesJava") {
+        target("examples/**/*.java")
+        trimTrailingWhitespace()
+        endWithNewline()
+        leadingTabsToSpaces(4)
+    }
     kotlinGradle { ktlint() }
 }
 
@@ -111,6 +123,23 @@ pmd {
 
 // Tests are exempt from the documentation rule: a test method's name is its documentation.
 tasks.named<Pmd>("pmdTest") { ruleSetFiles = files("config/pmd/ruleset-test.xml") }
+
+// `examples/` is not a source set — it is deliberately outside the compiled tree so its files
+// never reach the jar or the coverage denominator — so PMD has no task for it and one has to be
+// registered by hand.
+val pmdExamples =
+    tasks.register<Pmd>("pmdExamples") {
+        group = "verification"
+        description = "Runs PMD over the runnable examples."
+        source = fileTree("examples") { include("**/*.java") }
+        ruleSetFiles = files("config/pmd/ruleset-examples.xml")
+        ruleSets = emptyList()
+        isConsoleOutput = true
+    }
+
+// Without this the task above exists and never runs: `check` only depends on the PMD tasks Gradle
+// generated from the source sets.
+tasks.check { dependsOn(pmdExamples) }
 
 jacoco { toolVersion = "0.8.15" }
 

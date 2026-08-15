@@ -13,8 +13,9 @@
 // error rather than a silent replay, which is what stops a recycled key from swallowing a real
 // second message.
 //
-// Examples are excluded from lint, coverage and the duplication gate: they exist to be read and
-// run, not to be shipped. Gradle never compiles this directory.
+// Examples are compiled by CI (javac, against the built jar) and checked by `pmdExamples`, because
+// they are copied by customers. They are not a Gradle source set, so they never reach the jar or
+// the coverage denominator — nothing in CI runs them.
 
 import com.mailkube.MailkubeClient;
 import com.mailkube.exception.ApiException;

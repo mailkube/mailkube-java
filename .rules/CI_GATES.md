@@ -45,15 +45,31 @@ Where the package has **no runtime dependencies**, say so in `ci.yml` rather tha
 absence to look like an oversight. A zero-dependency SDK is a deliberate property, and the comment
 is what stops someone adding the job later and finding nothing to pin.
 
-### 3. Examples are compiled, or they rot
+### 3. Examples are compiled AND linted, or they rot
 
-Examples are excluded from lint, coverage and the duplication gate, because they are documentation
-rather than shipped code. The exclusions that make that work also remove them from the normal
-build, so an API change breaks every example silently and the first person to notice is a reader
-copying code that no longer compiles.
+Examples are documentation, and that is the argument FOR gating them, not against it: customers
+copy them verbatim. An SDK certification run across all six SDKs found every one of its defects in
+`examples/` — the one directory no gate looked at, in every repo — including examples that had
+never been executed successfully against a live gateway.
 
-Compile or type-check each example in CI. It is the cheapest gate in this file and the one most
-likely to catch a real regression in a published SDK.
+So examples are held to the repo's own linter, and each one is compiled or syntax-checked in CI.
+Whatever mechanism keeps them out of the normal build (a build tag, a source-set boundary, an
+exclusion) also keeps them out of the compiler, so the compile step has to name them explicitly.
+
+Two carve-outs remain, and only these two:
+
+- **Coverage** excludes examples. Nothing in CI executes them — that needs live credentials — so
+  including them would either tank the ≥90% gate or invite meaningless tests.
+- **Duplication** is measured over `examples/` by a *separate* jscpd pass at `minTokens: 100`
+  rather than the main run's 50. Every example repeats the same scaffolding, and hoisting it into
+  a shared helper would make each file unreadable on its own, which is the one thing an example
+  must be. The higher threshold still fails on a copy-pasted example.
+
+Beware gates that pass by doing nothing. Three of them turned up while wiring this: `node --check`
+accepts several files and checks only the first; a bare `for … done` loop reports only the last
+iteration's status; and Gradle's `Pmd` task exits 0 while printing a ParseException for a file it
+could not read. Assert a file count, add `|| exit 1`, and grep the output — then prove the gate is
+non-vacuous by injecting a defect and watching it fail.
 
 ### 4. A job-level `permissions:` block replaces the defaults
 
