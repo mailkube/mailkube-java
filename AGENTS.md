@@ -16,6 +16,7 @@ as `com.mailkube:mailkube-java`. Load the relevant rule file from `.rules/` base
 | `.rules/SDK_CONTRACT.md` | Adding a resource, verb, response model, paginated listing, or webhook event: the cross-SDK decisions (config, layering, naming, errors, pagination, webhooks) every mailkube SDK implements identically. Shared verbatim across every SDK; changes are made centrally. |
 | `.rules/SDK_DESIGN.md` | The same tasks, for the **Java realization**: the module descriptor as the layering gate, the Java 25 floor and why it is load-bearing, the three non-obvious `HttpClient` rules, and why this SDK writes its own JSON. |
 | `.rules/RELEASE.md` | Touching `release.yml`, `.releaserc.json`, `gradle.properties`, or the Maven Central publish flow. |
+| `.rules/CI_GATES.md` | Adding, removing or weakening a CI job, or when a release fails after the tag was already pushed: why the publish-readiness, dependency-floor, example-compilation and release-permission gates exist. Shared verbatim across every mailkube repo; changes are made centrally. |
 
 ## Key Conventions (always apply)
 

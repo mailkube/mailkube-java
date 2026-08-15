@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mailkube.exception.ConfigurationException;
+import com.mailkube.exception.ConnectionException;
 import com.mailkube.internal.Config;
 import com.mailkube.model.SendEmailParams;
 import java.io.IOException;
@@ -64,6 +65,40 @@ class ClientTest {
             assertEquals("application/json", request.header("Content-Type"));
             assertEquals("application/json", request.header("Accept"));
             assertEquals("mailkube-java/" + Version.current(), request.header("User-Agent"));
+            // The assertion above is tautological about the version segment: it would hold just as
+            // well if the version arrived as `v1.0.0`, which is what happens anywhere the release
+            // reads the git tag (`tagFormat` is `v${version}`) rather than the bare version. The
+            // contract's row is `mailkube-java/<version>`, so pin the shape independently.
+            assertTrue(request.header("User-Agent").matches("mailkube-java/\\d.*"), request.header("User-Agent"));
+        }
+    }
+
+    @Test
+    void appliesTheConfiguredTimeoutToTheRequestItselfNotJustToTheConfig() throws IOException {
+        // The timeout is only worth accepting if it reaches the wire. An injected client is what
+        // makes this test honest: it carries no connect timeout of its own, so the only deadline
+        // in play is the per-request one the transport sets, and deleting that line makes this
+        // send succeed rather than time out.
+        try (StubServer server = new StubServer(request -> {
+                    try {
+                        Thread.sleep(Duration.ofSeconds(2));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return StubServer.Reply.ok("{\"id\":\"abc\"}");
+                });
+                java.net.http.HttpClient injected = java.net.http.HttpClient.newHttpClient();
+                MailkubeClient client = MailkubeClient.builder()
+                        .apiKey("mk_test")
+                        .baseUrl(server.baseUrl())
+                        .httpClient(injected)
+                        .timeout(Duration.ofMillis(150))
+                        .environment(NO_ENV)
+                        .build()) {
+
+            assertThrows(
+                    ConnectionException.class,
+                    () -> client.emails().send(minimal().build()));
         }
     }
 

@@ -14,6 +14,7 @@ thresholds and how to satisfy each gate locally *before* pushing.
 | **Strict analysis** | no javac warnings at all | `-Xlint:all -Werror` |
 | **SOLID** | see below — approximated by lint + review | PMD + `module-info.java` + PR checklist |
 | **Formatting** | palantir-java-format clean | `./gradlew spotlessCheck` |
+| **Publish readiness** | the POM and artifacts Maven Central requires | `./gradlew validatePublication` |
 
 > **`check` runs the coverage gate only because it is told to.** `tasks.check { dependsOn(jacocoTestCoverageVerification) }`
 > is not automatic in Gradle; without it, `check` produces the report and enforces nothing.
@@ -31,7 +32,13 @@ thresholds and how to satisfy each gate locally *before* pushing.
 ./gradlew javadoc                            # documentation builds
 npx --yes jscpd@4 --config .jscpd.json .     # duplication (DRY) gate
 ./scripts/check-rule-index.sh                # every .rules/*.md indexed in AGENTS.md
+./gradlew validatePublication                # publish readiness (see below)
 ```
+
+> **`validatePublication` is not part of `check`, on purpose.** It builds the javadoc jar, which
+> CI already builds in its own step. It is a separate gate because the failures it catches happen
+> *after* semantic-release has pushed the tag — `publishCmd` publishes at the end of the release —
+> and a Central rejection there is the one release failure that cannot simply be re-run.
 
 **If you do not have a JDK 25**, the Gradle toolchain will download a matching one
 itself, provided your environment has a toolchain resolver.

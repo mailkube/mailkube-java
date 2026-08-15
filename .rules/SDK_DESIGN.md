@@ -54,7 +54,7 @@ deliberately no `CompletableFuture` variant.
 ### The Java 25 floor is load-bearing, not a preference
 
 This matters because it is also the only honest justification for forcing 25 on everyone
-downstream, including every Spring app that uses the starter.
+downstream, including every application that reaches this SDK through a framework integration.
 
 On JDK 21 through 23, `synchronized` blocks and `Object.wait()` **pinned** the carrier thread, and
 the JDK's own `HttpClient` used both internally. A virtual thread blocked in an HTTP call could
@@ -203,6 +203,29 @@ map and never a body.**
 Enabling is per client (`Builder.logging`, or `MAILKUBE_LOG`), never a static switch. A static
 enable is process-global mutable state that any library on the classpath could flip for everybody.
 
+## Deviations from the shared contract
+
+`SDK_CONTRACT.md` allows a deviation where the language genuinely demands a different shape, on the
+condition that it is **recorded here**. This is the complete list. Anything not on it is implemented
+as the contract states.
+
+| Contract clause | What Java does instead | Why |
+|---|---|---|
+| Sync-only SDKs give "a per-call cancellation or deadline handle" | Neither is a parameter on any verb | The timeout is per client and rides every request, so it is honoured by an injected client too; cancellation is `Thread.interrupt()`, which `HttpClient.send` observes. See below |
+| "Provide an opt-in enable function" for logging | `Builder.logging(Level)`, per client, no static enable | A process-global switch is mutable state any library on the classpath could flip for everybody (see [Logging carries no personal data](#logging-carries-no-personal-data-and-that-is-enforced-by-the-type)) |
+| "Redact the `authorization` and `idempotency-key` headers wherever headers are logged" | No redaction helper ships | Vacuous: no header ever reaches a log site, so the conditional is satisfied in full. A redaction class here would be dead code with no call site |
+| Logging content is otherwise unconstrained | Bodies are never logged, at all | Stricter than the contract, not looser. Same section |
+| "Derive the known-type set from the union" | An exhaustive `switch` over the sealed interface in `WebhooksTest`, checked by javac | A sealed `permits` clause is not enumerable at runtime without reflection, which Spring AOT and native images would then need metadata for. A missing arm is a compile error, which is a stronger guarantee than a runtime scan |
+| "Unknown fields are preserved" on inbound events | `raw()` on the `WebhookEvent` interface itself | Java has no `extra="allow"`. Putting it on the interface rather than on each record means no arm can forget it |
+| "A model mirrors the wire and nothing else; transport metadata belongs on the exception" | `Email.idempotentReplayed()` is read from the `Idempotent-Replayed` **response header** | The Configuration table separately mandates that the response report a replay, and a successful replay throws nothing, so there is no exception to hang it on. The two clauses conflict; this resolves in favour of the caller being told |
+
+**On per-call cancellation.** `HttpClient.send` is interruptible, and `HttpTransport` catches
+`InterruptedException`, restores the interrupt flag and raises `ConnectionException`, so a caller
+cancels by interrupting the thread that is waiting. With a virtual thread per call that is exactly
+as fine-grained as a per-call handle would be. Adding a `Duration` or a cancellation object to every
+verb would widen the whole surface to deliver what the platform already gives, and would have to be
+threaded through both transport interfaces to stay uniform.
+
 ## Framework integration surface
 
 A framework integration is a **separate package that depends on this one**. This section says what
@@ -261,9 +284,10 @@ at a loopback server, which this repo's own `StubServer` does.
    name from a classpath consumer; that it is unexported is what makes doing so unsupported.
 2. **A Spring Boot fat jar is the classpath case.** Boot's launcher does not build a module graph, so
    nothing in a Boot application is affected by the module descriptor.
-3. **`com.mailkube.spring` is a subpackage, not a split package.** Split packages are the same
-   package in two modules; a *sub*package is unrelated to JPMS. `module com.mailkube.spring
-   { requires com.mailkube; }` is legal, and an integration is free to take that name.
+3. **A subpackage is not a split package.** Split packages are the same package in two modules; a
+   *sub*package is unrelated to JPMS, so an integration that lives under `com.mailkube.<framework>`
+   needs no special handling. `module com.mailkube.acme { requires com.mailkube; }` is legal and
+   compiles against this module as it stands.
 4. **`requires transitive java.net.http` is load-bearing.** `Builder.httpClient(HttpClient)` is
    public API, so a consuming module must be able to name `HttpClient` without requiring
    `java.net.http` itself.

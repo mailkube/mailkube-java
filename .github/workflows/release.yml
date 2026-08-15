@@ -24,7 +24,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     permissions:
+      # A job-level block REPLACES the workflow defaults rather than adding to them, so every
+      # scope semantic-release needs has to be named here. `contents: write` alone is the trap:
+      # @semantic-release/github's successComment and labels run AFTER the tag and the release
+      # exist, so the missing scopes turn the run red at the point where nothing is re-runnable.
       contents: write # push the tag, create the GitHub Release
+      issues: write # successComment on a resolved issue
+      pull-requests: write # successComment and the `released` label on a resolved PR
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,10 +56,13 @@ jobs:
       # uploading the `0.0.0` placeholder to Central, which cannot be undone.
       #
       # The four secrets are on the whole step because `publishCmd` inherits its environment.
+      # The semantic-release major is pinned on purpose: this repo can sit untouched for
+      # months and an unpinned `npx` resolves @latest at run time. Dependabot cannot see
+      # this dependency — there is no manifest — so bumping it is a manual task.
       - name: Release (semantic-release — tag, GitHub Release, signed publish to Maven Central)
         run: >-
           npx --yes
-          -p semantic-release
+          -p semantic-release@24
           -p @semantic-release/exec
           semantic-release
         env:

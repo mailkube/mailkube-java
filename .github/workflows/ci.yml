@@ -1,11 +1,15 @@
 name: CI
 
 on:
-  # No `push: branches: [main]` trigger on purpose. release.yml already runs this entire workflow
-  # through `workflow_call` on every push to `main`, and both runs land in the same
-  # `ci-${{ github.ref }}` concurrency group with cancel-in-progress. A direct trigger therefore
-  # only ever races the gated one: one of the two is cancelled, and the cancelled run is what the
-  # README's CI badge reports. `main` stays fully covered by release.yml's ci-gate job.
+  push:
+    # `develop` only, and `main` is absent on purpose. `develop` is the integration branch and is
+    # pushed to directly, so without this trigger a direct push would run nothing — `pull_request`
+    # alone does not cover it. `main` is covered instead by release.yml, which runs this whole
+    # workflow through `workflow_call` as its `ci-gate` job before releasing. Adding `main` here
+    # would put that gate run and a standalone push run in the same `ci-${{ github.ref }}`
+    # concurrency group, where one is cancelled — and the cancelled one is what the README's CI
+    # badge reports.
+    branches: [develop]
   pull_request:
   workflow_call: # so release.yml can gate on the full CI
 
@@ -41,6 +45,19 @@ jobs:
 
       - name: Javadoc
         run: ./gradlew javadoc
+
+      - name: Publish readiness (publishToMavenLocal + the metadata Maven Central requires)
+        # The release publishes from semantic-release's `publishCmd`, i.e. after the tag has been
+        # pushed. A failure there leaves the tag on a commit with no artifact, and re-running finds
+        # nothing left to release, so the check belongs on every PR instead.
+        # `validatePublication` depends on `publishToMavenLocal`, so this runs the whole publication
+        # against the local repository — no credentials, nothing uploaded — and then asserts the POM
+        # elements Central validates and the local repository does not. See .rules/CI_GATES.md.
+        run: ./gradlew validatePublication -Pversion=0.0.0-ci
+
+  # There is deliberately no dependency-floor job: this library has NO runtime dependencies,
+  # so there are no declared lower bounds to resolve down to. That is a property worth
+  # keeping — add the job the day an `implementation` line appears. See .rules/CI_GATES.md.
 
   dry:
     # Language-agnostic duplication (DRY) gate — identical across every mailkube repo.

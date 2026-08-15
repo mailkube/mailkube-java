@@ -18,6 +18,10 @@ import com.mailkube.exception.NotFoundException;
 import com.mailkube.exception.RateLimitException;
 import com.mailkube.exception.ServerException;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -159,6 +163,56 @@ class ErrorsTest {
                 assertEquals("invalid_api_key", error.getMessage());
             }
         }
+    }
+
+    @Test
+    void carriesEveryDocumentedErrorNameAndNothingElse() throws IllegalAccessException {
+        // Hand-written on purpose, and self-contained on purpose. The public error reference is the
+        // source, and the point of restating it literally here is that a dropped, renamed or
+        // misspelled constant fails structurally without this repo needing a sibling SDK checked
+        // out to compare against. Adding a name to ErrorName means adding it to this list too.
+        List<String> documented = List.of(
+                "application_error",
+                "body_content_rejected",
+                "browser_not_allowed",
+                "concurrent_idempotent_requests",
+                "from_domain_not_allowed",
+                "invalid_api_key",
+                "invalid_attachment",
+                "invalid_from_address",
+                "invalid_idempotency_key",
+                "invalid_idempotent_request",
+                "invalid_request_body",
+                "link_reputation_blocked",
+                "max_message_size_exceeded",
+                "max_recipients_exceeded",
+                "method_not_allowed",
+                "missing_required_field",
+                "missing_required_variable",
+                "missing_user_agent",
+                "not_acceptable",
+                "quota_exceeded",
+                "rate_limit_exceeded",
+                "scheduled_email_not_found",
+                "scheduled_email_not_pending",
+                "scheduling_not_included",
+                "template_not_found",
+                "template_not_published",
+                "topic_disabled",
+                "topic_not_found",
+                "unsupported_media_type",
+                "validation_error");
+
+        List<String> declared = new ArrayList<>();
+        for (Field field : ErrorName.class.getDeclaredFields()) {
+            if (Modifier.isPublic(field.getModifiers()) && Modifier.isStatic(field.getModifiers())) {
+                declared.add((String) field.get(null));
+            }
+        }
+
+        // Order too, not just membership: the class keeps them alphabetical, and comparing lists
+        // rather than sets reports a missing name and a stray one as separate, readable failures.
+        assertEquals(documented, declared);
     }
 
     @Test
