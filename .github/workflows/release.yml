@@ -50,12 +50,14 @@ jobs:
 
       # One step does everything, and only when the commits actually warrant a release:
       # semantic-release creates the tag and the GitHub Release, and its `publishCmd` runs
-      # `./gradlew publish -Pversion=X.Y.Z`. Nothing is written to the tree, so there is no
-      # `@semantic-release/git` and no commit to `main`. Publishing from `publishCmd` rather
-      # than a following workflow step is what keeps a non-releasing push to `main` from
-      # uploading the `0.0.0` placeholder to Central, which cannot be undone.
+      # `./gradlew publish -Pversion=X.Y.Z` and then promotes the resulting staging repository
+      # to the Portal. Nothing is written to the tree, so there is no `@semantic-release/git`
+      # and no commit to `main`. Publishing from `publishCmd` rather than a following workflow
+      # step is what keeps a non-releasing push to `main` from uploading the `0.0.0` placeholder
+      # to Central, which cannot be undone — and it is also what keeps the promote on the same
+      # runner as the upload, which the OSSRH Staging API requires. See .rules/RELEASE.md.
       #
-      # The four secrets are on the whole step because `publishCmd` inherits its environment.
+      # The secrets are on the whole step because `publishCmd` inherits its environment.
       # The semantic-release major is pinned on purpose: this repo can sit untouched for
       # months and an unpinned `npx` resolves @latest at run time. Dependabot cannot see
       # this dependency — there is no manifest — so bumping it is a manual task.
@@ -71,3 +73,9 @@ jobs:
           ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.GPG_PASSPHRASE }}
           ORG_GRADLE_PROJECT_centralUsername: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           ORG_GRADLE_PROJECT_centralPassword: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          # The same two secrets again, under their own names, for the promote step that follows the
+          # Gradle upload inside `publishCmd`. Deliberately not reusing the ORG_GRADLE_PROJECT_
+          # pair: that prefix is Gradle's property-injection convention, and a shell script reading
+          # it would be borrowing a contract that belongs to another tool.
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}

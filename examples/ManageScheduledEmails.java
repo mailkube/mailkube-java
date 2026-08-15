@@ -40,15 +40,14 @@ void main(String[] args) {
         // 1. Schedule. A send carrying scheduledAt is accepted now and delivered later; batchId is
         //    a label you choose, and it only means anything alongside scheduledAt.
         Email first = client.emails()
-                .send(SendEmailParams.builder(
-                                "Acme <hello@yourdomain.com>", List.of(recipient), "Your weekly digest")
+                .send(SendEmailParams.builder(sender(), List.of(recipient), "Your weekly digest")
                         .html("<p>Here's what happened.</p>")
                         .scheduledAt(due)
                         .batchId(batchId)
                         .build());
 
         client.emails()
-                .send(SendEmailParams.builder("Acme <hello@yourdomain.com>", List.of(recipient), "One more thing")
+                .send(SendEmailParams.builder(sender(), List.of(recipient), "One more thing")
                         .html("<p>And this too.</p>")
                         .scheduledAt(due)
                         .batchId(batchId)
@@ -84,7 +83,10 @@ void main(String[] args) {
         // 5. Walk everything still pending. Pages are fetched lazily by following the server's own
         //    links, so `limit` here costs exactly one request no matter how large the collection is.
         client.scheduledEmails()
-                .iterateAll(ScheduledEmailListParams.builder().status("scheduled").build())
+                .iterateAll(ScheduledEmailListParams.builder()
+                        .status("scheduled")
+                        .batchId(batchId)
+                        .build())
                 .limit(10)
                 .forEach(email -> System.out.println("  " + email.id() + "  " + email.scheduledAt() + "  "
                         + email.subject()));
@@ -112,4 +114,11 @@ void main(String[] args) {
                 + ")");
         System.exit(1);
     }
+}
+
+// The verified sender this account may send from. Override per environment; the fallback is a
+// placeholder and will be rejected until you set your own domain.
+static String sender() {
+    String from = System.getenv("MAILKUBE_FROM");
+    return from == null || from.isBlank() ? "Acme <hello@yourdomain.com>" : from;
 }

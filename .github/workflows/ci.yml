@@ -55,6 +55,17 @@ jobs:
         # elements Central validates and the local repository does not. See .rules/CI_GATES.md.
         run: ./gradlew validatePublication -Pversion=0.0.0-ci
 
+      - name: Promote-step readiness (the half of the release no local build can exercise)
+        # `publishCmd` runs the Gradle upload AND the staging-repository promote. The promote needs
+        # live credentials and a real upload, so it cannot be rehearsed here — but its three
+        # non-credential failure modes can, and each of them is silent until after the tag exists.
+        run: |
+          test -x scripts/promote-central.sh
+          bash -n scripts/promote-central.sh
+          # A rename that updates one file and not the other leaves `publishCmd` calling a script
+          # that is not there, which strands a tagged version in an unpublished staging repository.
+          grep -q 'promote-central.sh' .releaserc.json
+
   # There is deliberately no dependency-floor job: this library has NO runtime dependencies,
   # so there are no declared lower bounds to resolve down to. That is a property worth
   # keeping — add the job the day an `implementation` line appears. See .rules/CI_GATES.md.

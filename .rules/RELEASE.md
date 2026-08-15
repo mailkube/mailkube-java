@@ -22,10 +22,13 @@ publish flow.
    The `version=` line in `gradle.properties` is a permanent `0.0.0` placeholder. A local build
    therefore produces `0.0.0` and a published artifact carries the real version: **that is
    intended.** Do not "fix" it by hardcoding a number, in `gradle.properties` or in Java source.
-4. **`publishCmd` uploads the signed artifacts**, and only when the commits actually warrant a
-   release. That placement is deliberate: a workflow step after `semantic-release` runs on *every*
-   push to `main`, including the ones that release nothing, and would upload the `0.0.0` placeholder
-   to Central — which cannot be undone.
+4. **`publishCmd` uploads the signed artifacts and then promotes them**, and only when the commits
+   actually warrant a release. Two commands, one `&&`:
+   `./gradlew publish -Pversion=X.Y.Z && ./scripts/promote-central.sh com.mailkube`. That placement
+   is deliberate twice over. A workflow step after `semantic-release` runs on *every* push to
+   `main`, including the ones that release nothing, and would upload the `0.0.0` placeholder to
+   Central — which cannot be undone. And the promote has to happen on the machine that uploaded;
+   see the next section.
 
 ## `publish` needs a repository, and its silence is the failure mode
 
@@ -37,17 +40,45 @@ and **exits 0** — a release that goes green and ships no artifact. Nothing war
 
 - **The URL is the Portal's OSSRH Staging API**
   (`https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/`). The
-  Central Portal has no plain Maven endpoint; this one accepts an ordinary Maven deploy and turns
-  it into a Portal deployment.
+  Central Portal has no plain Maven endpoint; this one accepts an ordinary Maven deploy. It does
+  **not** turn that deploy into a Portal deployment — see the next section.
 - **The repository is named `central` on purpose.** `PasswordCredentials` resolves
   `<repositoryName>Username` / `<repositoryName>Password` project properties, so the name is what
   makes `ORG_GRADLE_PROJECT_centralUsername` / `centralPassword` in `release.yml` reach it. Rename
   the repository and the credentials are silently not found.
 
-**A successful upload is not yet a release.** The Portal's default publishing mode is
-`user_managed`: the deployment lands in the Portal and waits for you to press Publish. Set the
-namespace to **automatic** publishing in the Portal UI if you want the workflow to be the last
-manual step. Either way, check the Portal after the first release rather than assuming a green job
+## Uploading is only half of it, and the other half is IP-bound
+
+`./gradlew publish` leaves the artifacts in an **open staging repository**. That is not a Portal
+deployment: it does not appear on <https://central.sonatype.com/publishing/deployments>, there is no
+UI anywhere that lists it, and nothing can be published from it. The release goes green and ships
+nothing. This is the same class of silent failure as the missing `repositories` block above, one
+layer further along, and it is why `scripts/promote-central.sh` exists.
+
+**The promote must run from the machine that uploaded.** The API keys the default repository by
+`(token user, source IP)`, so calling it from anywhere else answers
+`No repository found for <user>/<ip>/<namespace>--default-repository` while the repository plainly
+exists. A laptop cannot finish a release the runner started. Concretely: the promote lives inside
+`publishCmd`, in the same step and on the same runner as the Gradle upload. Do not "tidy" it into a
+following workflow step, and do not move it to a second job.
+
+If a release ever does strand a repository — the promote failed, or an older release predates this
+script — it is recoverable by hand, but only by naming the repository explicitly rather than using
+the default:
+
+```bash
+AUTH=$(printf '%s:%s' "$USER" "$TOKEN" | base64 | tr -d '\n')
+# `ip=any` is load-bearing: the search is IP-scoped too, and without it this returns [].
+curl -sS -H "Authorization: Bearer $AUTH" \
+  'https://ossrh-staging-api.central.sonatype.com/manual/search/repositories?ip=any&state=open'
+# then POST /manual/upload/repository/<URL-ENCODED KEY> — the key contains slashes.
+```
+
+**And a promoted deployment is still not a release.** The script asks for `publishing_type=
+user_managed`, so the deployment lands VALIDATED in the Portal and waits for a human to press
+Publish. That is the last point at which it can be dropped; after it, the version is immutable and
+there is no yank. Change the query parameter in the script to `automatic` to make the workflow the
+last manual step. Either way, check the Portal after a release rather than assuming a green job
 means the artifact is on Central.
 
 ## Why nothing is committed back to `main`
@@ -99,6 +130,8 @@ in a workflow step.
 - Do not add a `version` literal anywhere in Java source, and do not commit the generated
   `version.properties`. `Version` reads the resource and then the manifest for a reason.
 - Do not move `./gradlew publish` out of `publishCmd` into a workflow step — see contract point 4.
+- Do not split the promote away from the upload, into a later step, a later job, or a human. It is
+  IP-bound to the uploader and it is the difference between a green release and a published one.
 - Do not remove the `repositories` block or rename the `central` repository — both failures are
   silent, and the second one only shows up as an authentication error at release time.
 - Do not publish a snapshot to Central; it does not accept them.
