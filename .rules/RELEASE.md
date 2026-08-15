@@ -12,9 +12,13 @@ publish flow.
    `chore(release):` commit, no `CHANGELOG.md`, no version bump landed in the tree. See "Why nothing
    is committed back to `main`".
 3. **The tag IS the version.** `@semantic-release/exec`'s `publishCmd` runs
-   `./gradlew publish -Pversion=X.Y.Z`. Gradle writes that version into the jar manifest, and
-   `Version.current()` reads it back for the User-Agent, so the version on the wire equals the
-   released version by construction.
+   `./gradlew publish -Pversion=X.Y.Z`. Gradle writes that version into the jar manifest **and into
+   a generated `com/mailkube/version.properties` resource**, and `Version.current()` reads it back
+   for the User-Agent, so the version on the wire equals the released version by construction.
+   The resource is read first and is not redundant: `java.lang.Package` carries no versioning
+   information for a package in a *named* module, so on the module path the manifest attribute is
+   invisible and a JPMS consumer would report `0.0.0`. Both are derived from the one Gradle version
+   property and neither is committed, so this is one source of truth with two carriers.
    The `version=` line in `gradle.properties` is a permanent `0.0.0` placeholder. A local build
    therefore produces `0.0.0` and a published artifact carries the real version: **that is
    intended.** Do not "fix" it by hardcoding a number, in `gradle.properties` or in Java source.
@@ -92,7 +96,8 @@ in a workflow step.
 - Do not bump the `version=` line, move tags, or add a `CHANGELOG.md`, `@semantic-release/git`
   or `@semantic-release/changelog`. All of those reintroduce the commit to `main` that this
   setup exists to avoid.
-- Do not add a `version` literal anywhere in Java source. `Version` reads the manifest for a reason.
+- Do not add a `version` literal anywhere in Java source, and do not commit the generated
+  `version.properties`. `Version` reads the resource and then the manifest for a reason.
 - Do not move `./gradlew publish` out of `publishCmd` into a workflow step — see contract point 4.
 - Do not remove the `repositories` block or rename the `central` repository — both failures are
   silent, and the second one only shows up as an authentication error at release time.

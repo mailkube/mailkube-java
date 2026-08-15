@@ -64,6 +64,29 @@ tasks.jar {
     }
 }
 
+// ...and it carries the same version as a resource, because the manifest route DOES NOT WORK on the
+// module path. `java.lang.Package`'s own @implNote says builtin loaders define no Package object for
+// a package in a named module, so `getImplementationVersion()` is null there and every JPMS consumer
+// would report `mailkube-java/0.0.0`. This is not a second source of truth: both the manifest
+// attribute and this file are derived from the one Gradle version property, and neither is committed.
+val versionResourceDir = layout.buildDirectory.dir("generated/version")
+
+// `tasks.register`, not the `by tasks.registering` delegate: that delegate is deprecated from
+// Gradle 9.6 and incompatible with Gradle 10, the same reason the signing block avoids `by project`.
+val generateVersionResource =
+    tasks.register<WriteProperties>("generateVersionResource") {
+        destinationFile = versionResourceDir.map { it.file("com/mailkube/version.properties") }
+        comment = "Generated from the Gradle version property. Do not edit, and do not commit."
+        property("version", providers.provider { project.version.toString() })
+    }
+
+// `builtBy` on the source set, not `dependsOn` on processResources. The generated directory has
+// more than one consumer: `sourcesJar` reads it too, and Gradle 9 fails the build outright when a
+// task consumes another task's output without a declared dependency. Declaring it once here covers
+// every consumer, present and future — a `dependsOn` per task is the version of this that goes
+// stale, and it goes stale at `publish` time, i.e. after the release has already pushed the tag.
+sourceSets.main { resources.srcDir(files(versionResourceDir).builtBy(generateVersionResource)) }
+
 spotless {
     java {
         // palantir-java-format, NOT google-java-format: the latter needs
@@ -151,6 +174,11 @@ publishing {
                 scm {
                     url = "https://github.com/mailkube/mailkube-java"
                     connection = "scm:git:https://github.com/mailkube/mailkube-java.git"
+                    // Central's "sufficient metadata" example carries all three. The validator has
+                    // historically accepted an scm block without this one, but a rejection here
+                    // fails the publish AFTER semantic-release has already pushed the tag, so the
+                    // cheap line wins over the recoverable-but-messy alternative.
+                    developerConnection = "scm:git:ssh://git@github.com/mailkube/mailkube-java.git"
                 }
             }
         }
@@ -173,6 +201,41 @@ publishing {
             url = uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
             credentials(PasswordCredentials::class)
         }
+    }
+}
+
+// A publish-readiness gate. Everything it catches would otherwise surface AFTER semantic-release
+// has created and pushed the tag, which it does before running the publish step at all — leaving
+// `vX.Y.Z` on a commit with no artifact and no GitHub Release behind it (`@semantic-release/github`
+// runs after `exec` in the plugin array, so it never gets to create one). Re-running does not fix
+// that: the tag already exists for that commit, so the next run finds nothing to release. Gradle
+// has no `--dry-run` publish, so this asserts what Maven Central
+// actually validates: the required POM elements, and the sources and javadoc jars beside the main
+// one. Run it with `./gradlew validatePublication`.
+//
+// Deliberately NOT wired into `check`: it builds the javadoc jar, and CI already runs `javadoc`
+// as its own step. It is a separate CI step for the same reason `jscpd` is.
+val requiredPomElements =
+    listOf("name", "description", "url", "licenses", "developers", "scm", "connection", "developerConnection")
+
+tasks.register("validatePublication") {
+    group = "verification"
+    description = "Fails if the artifact Maven Central would receive is missing required metadata."
+    // `publishToMavenLocal` runs the REAL publication — POM generation, sources jar, javadoc jar,
+    // signing config — against a repository that needs no credentials and uploads nothing. It is
+    // what proves the publish path assembles at all. It is not sufficient on its own: the local
+    // repository happily accepts a POM with no `description`, and Maven Central does not. So the
+    // assertions below run on top of it rather than instead of it.
+    dependsOn("publishToMavenLocal", "generatePomFileForMavenJavaPublication")
+    val pom = tasks.named<GenerateMavenPom>("generatePomFileForMavenJavaPublication").map { it.destination }
+    // Resolved at configuration time so the check stays configuration-cache safe. Both tasks are
+    // registered by `withSourcesJar()` / `withJavadocJar()`; dropping either is a Central rejection.
+    val absentJars = listOf("sourcesJar", "javadocJar").filterNot { tasks.names.contains(it) }
+    doLast {
+        val pomXml = pom.get().readText()
+        val missing = requiredPomElements.filterNot { pomXml.contains("<$it>") }
+        require(missing.isEmpty()) { "the generated POM is missing elements Maven Central requires: $missing" }
+        require(absentJars.isEmpty()) { "the publication is missing artifacts Maven Central requires: $absentJars" }
     }
 }
 

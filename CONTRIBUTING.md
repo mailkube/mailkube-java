@@ -33,6 +33,7 @@ Every change must pass the same checks CI runs (see [.rules/SOLID_DRY_KISS.md](.
 ./gradlew javadoc                            # documentation builds
 npx --yes jscpd@4 --config .jscpd.json .     # duplication (DRY) gate, blocks at > 1%
 ./scripts/check-rule-index.sh                # every .rules/*.md indexed in AGENTS.md
+./gradlew validatePublication                # the POM/artifacts Maven Central requires
 ```
 
 Two things that trip people up, both documented in [.rules/SDK_DESIGN.md](.rules/SDK_DESIGN.md):
@@ -46,6 +47,11 @@ enforces the **PR title** (PRs are **squash-merged** using it), and it drives re
 `feat:`, `fix:`, and `perf:` cut a new version. See [.rules/RELEASE.md](.rules/RELEASE.md).
 
 Suggested scopes: `client`, `models`, `ci`, `deps`, `docs`.
+
+**Maintainers setting up branch protection:** a required status check is matched on the **job**
+name, not the workflow name and not the job id. The names to require are `PR-title` (from
+`pr-title.yml`, whose job id is `conventional-title` — requiring *that* would block every PR
+forever), plus `test`, `dry` and `docs` from `ci.yml`.
 
 ```
 feat(client): add retry with exponential backoff
