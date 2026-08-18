@@ -33,7 +33,7 @@ class TransportTest {
     void sendsNoBodyAtAllForABodylessRequest() throws IOException {
         try (StubServer server = new StubServer(request -> StubServer.Reply.ok("{\"id\":\"abc\"}"));
                 HttpClient http = HttpClient.newHttpClient()) {
-            Config config = new Config("mk_test", server.baseUrl(), null, null, Map.of());
+            Config config = new Config("mk_test", server.baseUrl(), null, null, null, Map.of());
             HttpTransport transport = new HttpTransport(config, http, SILENT);
 
             transport.sendEmail(new RequestSpec("emails", "GET", null, Map.of(), Map.of()));
@@ -48,7 +48,7 @@ class TransportTest {
     void mergesPerRequestHeadersOverTheClientDefaults() throws IOException {
         try (StubServer server = new StubServer(request -> StubServer.Reply.ok("{\"id\":\"abc\"}"));
                 HttpClient http = HttpClient.newHttpClient()) {
-            Config config = new Config("mk_test", server.baseUrl(), null, null, Map.of());
+            Config config = new Config("mk_test", server.baseUrl(), null, null, null, Map.of());
             HttpTransport transport = new HttpTransport(config, http, SILENT);
 
             // Content-Type COLLIDES with a client default on purpose. HttpRequest.Builder.header
@@ -82,7 +82,7 @@ class TransportTest {
     void sendsFiltersAsAQueryStringAndEncodesThem() throws IOException {
         try (StubServer server = new StubServer(request -> StubServer.Reply.ok("{}"));
                 HttpClient http = HttpClient.newHttpClient()) {
-            Config config = new Config("mk_test", server.baseUrl(), null, null, Map.of());
+            Config config = new Config("mk_test", server.baseUrl(), null, null, null, Map.of());
             HttpTransport transport = new HttpTransport(config, http, SILENT);
 
             transport.request(RequestSpec.get("scheduled-emails", Map.of("status", "scheduled,queued")), body -> body);
@@ -97,7 +97,7 @@ class TransportTest {
     void mapsATypedResponseAndRefusesAMalformedSuccessBody() throws IOException {
         try (StubServer server = new StubServer(request -> StubServer.Reply.ok("{\"total_count\":7}"));
                 HttpClient http = HttpClient.newHttpClient()) {
-            Config config = new Config("mk_test", server.baseUrl(), null, null, Map.of());
+            Config config = new Config("mk_test", server.baseUrl(), null, null, null, Map.of());
             HttpTransport transport = new HttpTransport(config, http, SILENT);
 
             int total = transport.request(RequestSpec.get("x"), body -> Json.integer(body, "total_count", 0));
@@ -106,7 +106,7 @@ class TransportTest {
 
         try (StubServer server = new StubServer(request -> StubServer.Reply.ok("<html>not json</html>"));
                 HttpClient http = HttpClient.newHttpClient()) {
-            Config config = new Config("mk_test", server.baseUrl(), null, null, Map.of());
+            Config config = new Config("mk_test", server.baseUrl(), null, null, null, Map.of());
             HttpTransport transport = new HttpTransport(config, http, SILENT);
 
             // A 2xx of the wrong shape is not an API error, so it must not arrive as one. Decoding
@@ -122,7 +122,7 @@ class TransportTest {
         try (StubServer server =
                         new StubServer(request -> new StubServer.Reply(502, "<html>bad gateway</html>", Map.of()));
                 HttpClient http = HttpClient.newHttpClient()) {
-            Config config = new Config("mk_test", server.baseUrl(), null, null, Map.of());
+            Config config = new Config("mk_test", server.baseUrl(), null, null, null, Map.of());
             HttpTransport transport = new HttpTransport(config, http, SILENT);
 
             // Leniency runs the other way for an ERROR body: an HTML 502 must still map by status
@@ -145,26 +145,27 @@ class TransportTest {
 
     @Test
     void refusesALinkOnADifferentPortOfTheSameHost() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, Map.of());
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, null, Map.of());
 
         assertThrows(ConfigurationException.class, () -> config.buildUrl("https://api.example.test:8443/v1/x"));
     }
 
     @Test
     void refusesALinkOnADifferentScheme() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, Map.of());
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, null, Map.of());
 
         assertThrows(ConfigurationException.class, () -> config.buildUrl("http://api.example.test/v1/x"));
     }
 
     @Test
     void treatsAnEmptyApiKeyAsNoApiKey() {
-        assertThrows(ConfigurationException.class, () -> new Config("", null, null, null, Map.of()));
+        assertThrows(ConfigurationException.class, () -> new Config("", null, null, null, null, Map.of()));
     }
 
     @Test
     void readsTheBaseUrlFromTheEnvironmentWhenTheCallerSetsNone() {
-        Config config = new Config("mk_test", null, null, null, Map.of(Config.ENV_BASE_URL, "https://env.example/v2/"));
+        Config config =
+                new Config("mk_test", null, null, null, null, Map.of(Config.ENV_BASE_URL, "https://env.example/v2/"));
 
         assertEquals("https://env.example/v2/", config.baseUrl().toString());
     }

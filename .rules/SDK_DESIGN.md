@@ -175,7 +175,9 @@ exactly the silent way described above. The test ruleset therefore restates its 
 | ISO-8601 rendering, base64 attachments | `SendEmailParams.Builder` |
 | One version source, read by the User-Agent | `gradle.properties` → generated `version.properties` (and the jar manifest) → `Version.current()` |
 | HTTP client injection and ownership | `Builder.httpClient(...)`, `MailkubeClient.close()` |
+| User-Agent suffix, SDK token leading | `Config` constructor (`usableSuffix`), `Config.userAgent()`, `Builder.userAgentSuffix(...)` |
 | Webhook signature verification | `Webhooks` (no client instance needed) |
+| Shipping the signing half alongside the verifier | `Webhooks.sign(...)`, sharing `signatureMac` with the verifier so the two cannot drift |
 | Silent-by-default logging, `MAILKUBE_LOG` | `Config.logLevel()`, `LoggingObserver`, `Builder.logging(...)` |
 | Header redaction wherever headers are logged | Vacuous: no header ever reaches a log site. See below |
 | Concurrency safety, proven not asserted | `ConcurrencyTest` |

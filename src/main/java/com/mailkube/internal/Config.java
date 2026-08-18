@@ -40,6 +40,7 @@ public final class Config {
     private final URI baseUrl;
     private final Duration timeout;
     private final System.Logger.Level logLevel;
+    private final String userAgentSuffix;
 
     /**
      * Resolve configuration from the arguments, then the environment, then the defaults.
@@ -48,6 +49,8 @@ public final class Config {
      * @param baseUrl the API base URL, or null to read {@value #ENV_BASE_URL}
      * @param timeout the per-request timeout, or null for thirty seconds
      * @param logLevel the level to log exchanges at, or null to read {@value #ENV_LOG}
+     * @param userAgentSuffix a {@code name/version} token identifying software that wraps this
+     *     SDK, or null for none
      * @param environment the environment lookup, injected so it can be driven from a test
      */
     public Config(
@@ -55,6 +58,7 @@ public final class Config {
             String baseUrl,
             Duration timeout,
             System.Logger.Level logLevel,
+            String userAgentSuffix,
             Map<String, String> environment) {
         String key = apiKey != null ? apiKey : environment.get(ENV_API_KEY);
         if (key == null || key.isEmpty()) {
@@ -65,6 +69,26 @@ public final class Config {
         this.baseUrl = parse(resolved);
         this.timeout = Objects.requireNonNullElse(timeout, DEFAULT_TIMEOUT);
         this.logLevel = logLevel != null ? logLevel : levelFromEnvironment(environment.get(ENV_LOG));
+        this.userAgentSuffix = usableSuffix(userAgentSuffix);
+    }
+
+    /**
+     * Normalize a caller-supplied User-Agent token, rejecting anything unusable.
+     *
+     * <p>A value carrying CR or LF is dropped rather than sanitized: a header value that could
+     * split the request is not one this library will send, and silently repairing it hides the
+     * caller's bug. Extracted from the constructor so that constructor stays under the complexity
+     * gate rather than growing a branch per option.
+     *
+     * @param suffix the caller's token, possibly null
+     * @return the token to use, or an empty string for none
+     */
+    private static String usableSuffix(String suffix) {
+        if (suffix == null) {
+            return "";
+        }
+        String trimmed = suffix.strip();
+        return trimmed.indexOf('\r') >= 0 || trimmed.indexOf('\n') >= 0 ? "" : trimmed;
     }
 
     /**
@@ -108,11 +132,24 @@ public final class Config {
                 "Authorization",
                 "Bearer " + apiKey,
                 "User-Agent",
-                "mailkube-java/" + Version.current(),
+                userAgent(),
                 "Content-Type",
                 "application/json",
                 "Accept",
                 "application/json");
+    }
+
+    /**
+     * This library's token, plus any suffix a wrapping tool supplied.
+     *
+     * <p>The SDK token always leads, so attribution of the SDK itself never depends on what the
+     * wrapper chose to call itself.
+     *
+     * @return the User-Agent value
+     */
+    private String userAgent() {
+        String agent = "mailkube-java/" + Version.current();
+        return userAgentSuffix.isEmpty() ? agent : agent + " " + userAgentSuffix;
     }
 
     /**

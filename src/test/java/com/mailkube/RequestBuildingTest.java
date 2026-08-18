@@ -51,7 +51,7 @@ class RequestBuildingTest {
 
     @Test
     void appendsFiltersToAPathThatHasNoQueryYet() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, Map.of());
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, null, Map.of());
 
         assertEquals(
                 "https://api.example.test/v1/scheduled-emails?page=2",
@@ -60,7 +60,7 @@ class RequestBuildingTest {
 
     @Test
     void joinsOntoAServerIssuedLinkThatAlreadyCarriesAQuery() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, Map.of());
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, null, Map.of());
 
         // A pagination link arrives complete. Appending with `?` here would produce two of them and
         // a route nobody serves.
@@ -72,7 +72,7 @@ class RequestBuildingTest {
 
     @Test
     void refusesFiltersOnALinkOffTheConfiguredOrigin() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, Map.of());
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, null, Map.of());
 
         // The origin guard has to hold on the filtered overload too, or a `next` link on a foreign
         // host would take the Authorization header with it.

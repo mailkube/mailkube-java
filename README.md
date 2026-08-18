@@ -62,6 +62,13 @@ covers everything, including JSON.
 | Base URL | `baseUrl(...)` | `MAILKUBE_BASE_URL` | `https://api.mailkube.com/mta/v1/` |
 | Timeout | `timeout(...)` | | 30s |
 | HTTP client | `httpClient(...)` | | `HttpClient.newBuilder()...` |
+| User-Agent suffix | `userAgentSuffix(...)` | | none |
+
+Set `userAgentSuffix` when your software wraps this SDK — a CLI, an internal service, a framework
+integration — so requests can be attributed to the tool the user actually ran. This library's token
+stays leading, giving `mailkube-java/1.1.0 my-cli/1.0.0`. Give it the conventional `name/version`
+form; surrounding whitespace is trimmed, and a value containing CR or LF is ignored rather than
+sanitized, since a header value that could be split is not one this library will send.
 
 Pass your own `HttpClient` to add a proxy, an SSL context or instrumentation. A client you inject
 belongs to you: `close()` will not close it.
@@ -145,13 +152,13 @@ keep it cheap; one that throws is reported and ignored rather than failing your 
 ### Webhooks
 
 `Webhooks.verifySignature` is a dependency-free HMAC check over the **raw** request body. Never
-parse then re-serialize, or the signature will not match. `parseEvent` then turns the verified bytes
-into a typed event, so the two compose in one expression:
+parse then re-serialize, or the signature will not match. `Webhooks.verify` is the combinator most
+handlers want — it verifies, then builds the typed event out of the bytes verification returned,
+which is the order that makes "verify a re-serialization" impossible to write by accident:
 
 ```java
 byte[] raw = request.getInputStream().readAllBytes();
-WebhookEvent event = Webhooks.parseEvent(
-    Webhooks.verifySignature(raw, headers, System.getenv("MAILKUBE_WEBHOOK_SECRET")));
+WebhookEvent event = Webhooks.verify(raw, headers, System.getenv("MAILKUBE_WEBHOOK_SECRET"));
 
 switch (event) {
     case EmailBouncedEvent e -> suppress(e.message().to(), e.bounce().reason());
@@ -160,8 +167,19 @@ switch (event) {
 }
 ```
 
+Call `verifySignature` and `parseEvent` separately instead if you need the verified bytes in hand —
+to log or forward them, say — before deciding to parse.
+
 `WebhookEvent` is a **sealed** interface, so a `switch` with no `default` arm will not compile until
 it handles every event type — the compiler tells you when a new one appears rather than your logs.
+
+`Webhooks.sign` is the mirror, so your own tests can build a valid request without reimplementing
+the HMAC from this page:
+
+```java
+String timestamp = Instant.now().toString();
+String signature = Webhooks.sign("wh_1", timestamp, body, secret);
+```
 
 | Event | Type | Carries |
 |---|---|---|

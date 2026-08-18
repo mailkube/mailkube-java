@@ -42,8 +42,13 @@ public final class MailkubeClient implements AutoCloseable {
     private final Config config;
 
     private MailkubeClient(Builder builder) {
-        Config config =
-                new Config(builder.apiKey, builder.baseUrl, builder.timeout, builder.logLevel, builder.environment);
+        Config config = new Config(
+                builder.apiKey,
+                builder.baseUrl,
+                builder.timeout,
+                builder.logLevel,
+                builder.userAgentSuffix,
+                builder.environment);
         this.config = config;
         this.ownsHttpClient = builder.httpClient == null;
         this.httpClient = ownsHttpClient ? defaultHttpClient(config) : builder.httpClient;
@@ -156,6 +161,7 @@ public final class MailkubeClient implements AutoCloseable {
         private HttpClient httpClient;
         private RequestObserver observer;
         private System.Logger.Level logLevel;
+        private String userAgentSuffix;
         private SendTransport transport;
         private ScheduledTransport scheduledTransport;
         private Map<String, String> environment = System.getenv();
@@ -254,6 +260,26 @@ public final class MailkubeClient implements AutoCloseable {
          */
         public Builder logging(System.Logger.Level level) {
             this.logLevel = level;
+            return this;
+        }
+
+        /**
+         * Append a token to the {@code User-Agent} this SDK sends.
+         *
+         * <p>For software that wraps this SDK — a CLI, an internal service, a framework
+         * integration — so a request can be attributed to the tool the user actually ran while
+         * still identifying the SDK underneath. This library's token stays leading:
+         * {@code mailkube-java/1.2.3 my-cli/1.0.0}.
+         *
+         * <p>Give it the conventional {@code name/version} form. Surrounding whitespace is
+         * trimmed, and a value containing CR or LF is ignored rather than sanitized: a header
+         * value that could be split is not one this library will send.
+         *
+         * @param suffix the token to append
+         * @return this builder
+         */
+        public Builder userAgentSuffix(String suffix) {
+            this.userAgentSuffix = suffix;
             return this;
         }
 

@@ -15,10 +15,12 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * Webhook signature verification.
+ * Webhook signature verification and event parsing.
  *
  * <p>Verification is pure and dependency-free: no client instance, no configuration, so you call
- * it directly inside your webhook handler.
+ * it directly inside your webhook handler. {@link #verify(byte[], Map, String)} is the combinator
+ * most handlers want: verify the signature, then build the typed {@link WebhookEvent} the body
+ * describes.
  */
 public final class Webhooks {
 
@@ -98,6 +100,56 @@ public final class Webhooks {
         return EventCatalogue.parse(payload);
     }
 
+    /**
+     * Produce the {@code X-Webhook-Sig} value for a payload, the mirror of
+     * {@link #verifySignature(byte[], Map, String)}.
+     *
+     * <p>This exists so anything that produces a delivery — a fixture, a local replay tool, a fake
+     * endpoint in your own test suite — computes the signature the way this class verifies it. A
+     * reimplementation from the prose above agrees with its author's reading of the docs rather
+     * than with this SDK, and the two drift silently. Production code verifies; it does not sign.
+     *
+     * <p>Freshness is not this method's concern: it signs the timestamp it is given, so replaying
+     * an old capture reproduces the original signature exactly.
+     *
+     * @param id the {@code X-Webhook-Id} value
+     * @param timestamp the {@code X-Webhook-Ts} value, ISO-8601
+     * @param payload the raw body that will be sent
+     * @param secret the endpoint's signing secret
+     * @return the header value, including the {@code sha256=} prefix
+     */
+    public static String sign(String id, String timestamp, byte[] payload, String secret) {
+        return PREFIX + HexFormat.of().formatHex(signatureMac(id, timestamp, payload, secret));
+    }
+
+    /**
+     * Verify a webhook's signature and return the typed event, with the default tolerance.
+     *
+     * @param payload the raw request body
+     * @param headers the request headers, in any casing
+     * @param secret the endpoint's signing secret
+     * @return the verified, parsed event
+     */
+    public static WebhookEvent verify(byte[] payload, Map<String, String> headers, String secret) {
+        return verify(payload, headers, secret, DEFAULT_TOLERANCE);
+    }
+
+    /**
+     * Verify a webhook's signature and return the typed event.
+     *
+     * <p>The combinator most handlers want. Verifying first and parsing what verification returned
+     * is the order that makes "verify a re-serialization" impossible to write by accident.
+     *
+     * @param payload the raw request body
+     * @param headers the request headers, in any casing
+     * @param secret the endpoint's signing secret
+     * @param tolerance the freshness window
+     * @return the verified, parsed event
+     */
+    public static WebhookEvent verify(byte[] payload, Map<String, String> headers, String secret, Duration tolerance) {
+        return parseEvent(verifySignature(payload, headers, secret, tolerance));
+    }
+
     private static void checkFreshness(String timestamp, Duration tolerance) {
         Instant parsed;
         try {
@@ -111,7 +163,7 @@ public final class Webhooks {
     }
 
     private static void checkSignature(byte[] payload, String id, String timestamp, String signature, String secret) {
-        byte[] expected = sign(payload, id, timestamp, secret);
+        byte[] expected = signatureMac(id, timestamp, payload, secret);
         byte[] provided;
         try {
             provided = HexFormat.of().parseHex(strip(signature));
@@ -125,7 +177,12 @@ public final class Webhooks {
         }
     }
 
-    private static byte[] sign(byte[] payload, String id, String timestamp, String secret) {
+    /**
+     * Compute the raw HMAC-SHA256 over the contract's signed input.
+     *
+     * <p>One implementation, so signing and verifying cannot disagree.
+     */
+    private static byte[] signatureMac(String id, String timestamp, byte[] payload, String secret) {
         try {
             Mac mac = Mac.getInstance(ALGORITHM);
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), ALGORITHM));

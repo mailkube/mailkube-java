@@ -212,7 +212,8 @@ class ObserverTest {
 
     @Test
     void letsAnExplicitLevelBeatTheEnvironment() {
-        Config config = new Config("mk_test", null, null, System.Logger.Level.ERROR, Map.of(Config.ENV_LOG, "TRACE"));
+        Config config =
+                new Config("mk_test", null, null, System.Logger.Level.ERROR, null, Map.of(Config.ENV_LOG, "TRACE"));
 
         assertEquals(System.Logger.Level.ERROR, config.logLevel());
     }
@@ -271,7 +272,7 @@ class ObserverTest {
     }
 
     private static Config config(Map<String, String> environment) {
-        return new Config("mk_test", null, null, null, environment);
+        return new Config("mk_test", null, null, null, null, environment);
     }
 
     private static MailkubeClient.Builder client(StubServer server) {
