@@ -1,10 +1,14 @@
 package com.mailkube;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mailkube.exception.SignatureVerificationException;
+import com.mailkube.model.EmailDeliveredEvent;
+import com.mailkube.model.WebhookEvent;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -145,5 +149,53 @@ class WebhooksTest {
                 "X-Webhook-Sig", signed.get("X-Webhook-Sig").substring("sha256=".length()));
 
         assertArrayEquals(PAYLOAD, Webhooks.verifySignature(PAYLOAD, bare, SECRET));
+    }
+
+    // The two below tie Webhooks.sign to that oracle from both directions: the value it produces,
+    // and the verifier's acceptance of it.
+
+    @Test
+    void signMatchesAnIndependentlyComputedSignature() {
+        String timestamp = "2026-01-01T00:00:00Z";
+        String expected = headersFor(PAYLOAD, ID, timestamp, SECRET).get("X-Webhook-Sig");
+
+        assertEquals(expected, Webhooks.sign(ID, timestamp, PAYLOAD, SECRET));
+    }
+
+    @Test
+    void theVerifierAcceptsWhatSignProduces() {
+        String timestamp = now();
+        Map<String, String> headers = Map.of(
+                "X-Webhook-Id", ID,
+                "X-Webhook-Ts", timestamp,
+                "X-Webhook-Sig", Webhooks.sign(ID, timestamp, PAYLOAD, SECRET));
+
+        assertArrayEquals(PAYLOAD, Webhooks.verifySignature(PAYLOAD, headers, SECRET));
+    }
+
+    @Test
+    void theVerifyThenParseFlowAReceiverActuallyWrites() {
+        // Both halves in the order a handler runs them, with the delivery built by sign() rather
+        // than a hand-rolled HMAC. This is what the README shows.
+        String timestamp = now();
+        Map<String, String> headers = Map.of(
+                "X-Webhook-Id", ID,
+                "X-Webhook-Ts", timestamp,
+                "X-Webhook-Sig", Webhooks.sign(ID, timestamp, PAYLOAD, SECRET));
+
+        WebhookEvent event = Webhooks.verify(PAYLOAD, headers, SECRET);
+
+        assertInstanceOf(EmailDeliveredEvent.class, event);
+    }
+
+    @Test
+    void theVerifyCombinatorHonoursAWidenedTolerance() {
+        String stale = Instant.now().minus(Duration.ofHours(1)).toString();
+        Map<String, String> headers = Map.of(
+                "X-Webhook-Id", ID,
+                "X-Webhook-Ts", stale,
+                "X-Webhook-Sig", Webhooks.sign(ID, stale, PAYLOAD, SECRET));
+
+        assertInstanceOf(EmailDeliveredEvent.class, Webhooks.verify(PAYLOAD, headers, SECRET, Duration.ofHours(2)));
     }
 }

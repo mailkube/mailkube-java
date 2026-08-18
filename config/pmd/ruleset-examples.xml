@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<ruleset name="mailkube-java-examples"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+  <description>
+    Examples keep the complexity, dead-code and correctness rules. They drop the documentation
+    one: a JEP 512 compact source file declares no public type, and each example carries a prose
+    header explaining what it does and how to run it — that IS its documentation.
+
+    Two traps, both of which produce a GREEN build while checking nothing:
+
+    1. A ruleset that fails to load does not fail the build. PMD prints "Cannot load ruleset",
+       then "No files to analyze", and Gradle reports success. Rules are restated here rather
+       than `ref`-ing ruleset.xml because PMD resolves a `ref` against the CLASSPATH, not against
+       this file — see ruleset-test.xml, where all three spellings were tried.
+    2. PMD 7.26.0 cannot parse a TOP-LEVEL FIELD in a compact source file. It logs a
+       ParseException, skips the file, and still exits 0. Keep every field inside `main`, and note
+       that CI greps the pmdExamples output for "ParseException" precisely because the task
+       cannot be trusted to fail on its own.
+  </description>
+
+  <rule ref="category/java/design.xml/CyclomaticComplexity">
+    <properties>
+      <property name="methodReportLevel" value="10"/>
+      <property name="classReportLevel" value="80"/>
+    </properties>
+  </rule>
+  <rule ref="category/java/design.xml/CognitiveComplexity">
+    <properties>
+      <property name="reportLevel" value="20"/>
+    </properties>
+  </rule>
+  <rule ref="category/java/bestpractices.xml/UnusedFormalParameter"/>
+  <rule ref="category/java/bestpractices.xml/UnusedPrivateMethod"/>
+  <rule ref="category/java/errorprone.xml/CloseResource"/>
+  <rule ref="category/java/errorprone.xml/EmptyCatchBlock"/>
+</ruleset>

@@ -13,6 +13,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ClientTest {
 
@@ -74,6 +76,47 @@ class ClientTest {
     }
 
     @Test
+    void aUserAgentSuffixFollowsTheSdkToken() throws IOException {
+        // A wrapping tool gets attribution without hiding which SDK made the call, so the
+        // contract's token stays in front.
+        try (StubServer server = new StubServer(request -> StubServer.Reply.ok("{\"id\":\"abc\"}"))) {
+            try (MailkubeClient client = clientWithSuffix(server, "my-cli/1.0.0")) {
+                client.emails().send(minimal().build());
+            }
+
+            assertEquals(
+                    "mailkube-java/" + Version.current() + " my-cli/1.0.0",
+                    server.received().getFirst().header("User-Agent"));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   ", "cli/1.0\ninjected: yes", "cli/1.0\rinjected: yes"})
+    void anUnusableUserAgentSuffixLeavesTheHeaderUntouched(String suffix) throws IOException {
+        // Blank is a no-op; CR/LF is dropped rather than cleaned, so nothing can split the header.
+        try (StubServer server = new StubServer(request -> StubServer.Reply.ok("{\"id\":\"abc\"}"))) {
+            try (MailkubeClient client = clientWithSuffix(server, suffix)) {
+                client.emails().send(minimal().build());
+            }
+
+            assertEquals(
+                    "mailkube-java/" + Version.current(),
+                    server.received().getFirst().header("User-Agent"));
+        }
+    }
+
+    @Test
+    void aSurroundingSpaceInTheUserAgentSuffixIsTrimmed() throws IOException {
+        try (StubServer server = new StubServer(request -> StubServer.Reply.ok("{\"id\":\"abc\"}"))) {
+            try (MailkubeClient client = clientWithSuffix(server, "  my-cli/1.0.0  ")) {
+                client.emails().send(minimal().build());
+            }
+
+            assertTrue(server.received().getFirst().header("User-Agent").endsWith(" my-cli/1.0.0"));
+        }
+    }
+
+    @Test
     void appliesTheConfiguredTimeoutToTheRequestItselfNotJustToTheConfig() throws IOException {
         // The timeout is only worth accepting if it reaches the wire. An injected client is what
         // makes this test honest: it carries no connect timeout of its own, so the only deadline
@@ -104,7 +147,7 @@ class ClientTest {
 
     @Test
     void resolvesARelativePathAgainstTheBaseUrl() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, NO_ENV);
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, null, NO_ENV);
 
         assertEquals(
                 "https://api.example.test/v1/emails", config.buildUrl("emails").toString());
@@ -112,7 +155,7 @@ class ClientTest {
 
     @Test
     void refusesAnAbsoluteUrlOnAnotherOrigin() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, NO_ENV);
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, null, NO_ENV);
 
         ConfigurationException error =
                 assertThrows(ConfigurationException.class, () -> config.buildUrl("https://evil.example/steal"));
@@ -122,7 +165,7 @@ class ClientTest {
 
     @Test
     void allowsAnAbsoluteUrlTheApiItselfIssued() {
-        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, NO_ENV);
+        Config config = new Config("mk_test", "https://api.example.test/v1/", null, null, null, NO_ENV);
         String link = "https://api.example.test/v1/emails?cursor=abc";
 
         assertEquals(link, config.buildUrl(link).toString());
@@ -130,13 +173,16 @@ class ClientTest {
 
     @Test
     void refusesAMalformedBaseUrl() {
-        assertThrows(ConfigurationException.class, () -> new Config("mk_test", "http://a b c", null, null, NO_ENV));
+        assertThrows(
+                ConfigurationException.class, () -> new Config("mk_test", "http://a b c", null, null, null, NO_ENV));
     }
 
     @Test
     void appliesTheDefaultTimeoutWhenTheCallerSetsNone() {
-        assertEquals(Config.DEFAULT_TIMEOUT, new Config("mk_test", null, null, null, NO_ENV).timeout());
-        assertEquals(Duration.ofSeconds(5), new Config("mk_test", null, Duration.ofSeconds(5), null, NO_ENV).timeout());
+        assertEquals(Config.DEFAULT_TIMEOUT, new Config("mk_test", null, null, null, null, NO_ENV).timeout());
+        assertEquals(
+                Duration.ofSeconds(5),
+                new Config("mk_test", null, Duration.ofSeconds(5), null, null, NO_ENV).timeout());
     }
 
     @Test
@@ -162,6 +208,15 @@ class ClientTest {
         return MailkubeClient.builder()
                 .apiKey("mk_test")
                 .baseUrl(server.baseUrl())
+                .environment(NO_ENV)
+                .build();
+    }
+
+    static MailkubeClient clientWithSuffix(StubServer server, String suffix) {
+        return MailkubeClient.builder()
+                .apiKey("mk_test")
+                .baseUrl(server.baseUrl())
+                .userAgentSuffix(suffix)
                 .environment(NO_ENV)
                 .build();
     }
