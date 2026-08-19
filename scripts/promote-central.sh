@@ -13,11 +13,12 @@
 # though the repository plainly exists. That is why this runs inside `publishCmd`, in the same step
 # and on the same runner as the Gradle upload, rather than as a following workflow step.
 #
-# The publishing type is `user_managed` on purpose and is set here rather than left to the
-# namespace default: the deployment lands VALIDATED and waits for a human to press Publish, which is
-# the last point at which a release can still be dropped. Once it is published the version is
-# immutable and there is no yank. Change the query parameter to `automatic` to make this workflow
-# the last manual step. See .rules/RELEASE.md.
+# The publishing type is `automatic` on purpose and is set here rather than left to the namespace
+# default: a validated deployment publishes itself, so a green release reaches Maven Central with no
+# human step. That removes the last point at which a release could still be dropped — once it is
+# published the version is immutable and there is no yank — which is why the CI gate in front of
+# this is the whole safety net. Change the query parameter to `user_managed` to put a human back in
+# the loop. See .rules/RELEASE.md.
 set -euo pipefail
 
 NAMESPACE="${1:?usage: promote-central.sh <namespace>}"
@@ -38,7 +39,7 @@ echo "Promoting the ${NAMESPACE} staging repository to the Central Portal"
 # itself in the body and a bare exit code here would send you looking in the wrong place.
 curl --silent --show-error --fail-with-body --request POST \
     --header "Authorization: Bearer ${AUTH}" \
-    "${API}/manual/upload/defaultRepository/${NAMESPACE}?publishing_type=user_managed"
+    "${API}/manual/upload/defaultRepository/${NAMESPACE}?publishing_type=automatic"
 echo
 
-echo "Forwarded. Publish it at https://central.sonatype.com/publishing/deployments"
+echo "Forwarded for automatic publication. Track it at https://central.sonatype.com/publishing/deployments"

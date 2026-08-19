@@ -74,12 +74,13 @@ curl -sS -H "Authorization: Bearer $AUTH" \
 # then POST /manual/upload/repository/<URL-ENCODED KEY> — the key contains slashes.
 ```
 
-**And a promoted deployment is still not a release.** The script asks for `publishing_type=
-user_managed`, so the deployment lands VALIDATED in the Portal and waits for a human to press
-Publish. That is the last point at which it can be dropped; after it, the version is immutable and
-there is no yank. Change the query parameter in the script to `automatic` to make the workflow the
-last manual step. Either way, check the Portal after a release rather than assuming a green job
-means the artifact is on Central.
+**A promoted deployment publishes itself.** The script asks for `publishing_type=automatic`, so a
+deployment that validates goes straight to Maven Central with no human step. There is therefore no
+point at which a release can still be dropped: once it is published the version is immutable and
+there is no yank, so `ci-gate` in `release.yml` is the entire safety net and must never be weakened.
+Change the query parameter in the script to `user_managed` to put a human back in the loop. Either
+way, check the Portal after a release rather than assuming a green job means the artifact is on
+Central.
 
 ## Why nothing is committed back to `main`
 
@@ -119,8 +120,8 @@ in a workflow step.
   job runs in it and holds the four secrets above.
 - **Publish the GPG public key** to `keyserver.ubuntu.com` (or another Central accepts), or
   verification fails at upload with an unhelpful message.
-- **Decide the namespace's publishing mode** in the Portal: `user_managed` (the default, you
-  press Publish) or `automatic`. See the section above.
+- **Decide the namespace's publishing mode** in the Portal. The script asks for `automatic`
+  explicitly, so it does not depend on the namespace default. See the section above.
 
 ## Do not
 
