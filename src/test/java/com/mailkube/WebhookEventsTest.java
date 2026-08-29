@@ -238,6 +238,18 @@ class WebhookEventsTest {
     }
 
     @Test
+    void toleratesAnEngagementBlockWithoutIpAddressOrUserAgent() {
+        // The platform stopped recording both, so a current server omits the keys entirely. The
+        // record components remain, deprecated, and read null rather than failing the parse.
+        WebhookEvent event = parse("email.opened", "\"open\":{\"timestamp\":\"T7\"}");
+
+        EmailOpenedEvent opened = assertInstanceOf(EmailOpenedEvent.class, event);
+        assertNull(opened.open().ipAddress());
+        assertNull(opened.open().userAgent());
+        assertEquals("T7", opened.open().timestamp());
+    }
+
+    @Test
     void refusesAPayloadThatIsNotAJsonObject() {
         // A malformed body is a broken request, not a new event type, so this one does raise.
         for (String broken : new String[] {"<html>not json</html>", "[1,2]", ""}) {
