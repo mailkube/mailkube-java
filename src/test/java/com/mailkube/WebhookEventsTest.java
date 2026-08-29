@@ -239,14 +239,28 @@ class WebhookEventsTest {
 
     @Test
     void toleratesAnEngagementBlockWithoutIpAddressOrUserAgent() {
-        // The platform stopped recording both, so a current server omits the keys entirely. The
-        // record components remain, deprecated, and read null rather than failing the parse.
+        // The three connection fields are elected per sending domain and off by default, so their
+        // keys are absent from most events. null here means the sender did not record the field,
+        // never that it recorded a blank, and that distinction is the point of the contract.
         WebhookEvent event = parse("email.opened", "\"open\":{\"timestamp\":\"T7\"}");
 
         EmailOpenedEvent opened = assertInstanceOf(EmailOpenedEvent.class, event);
         assertNull(opened.open().ipAddress());
         assertNull(opened.open().userAgent());
+        assertNull(opened.open().country());
         assertEquals("T7", opened.open().timestamp());
+    }
+
+    @Test
+    void readsAnElectedCountryAlongsideTheAddress() {
+        WebhookEvent event = parse(
+                "email.opened", "\"open\":{\"timestamp\":\"T7\",\"ipAddress\":\"203.0.113.7\",\"country\":\"FR\"}");
+
+        EmailOpenedEvent opened = assertInstanceOf(EmailOpenedEvent.class, event);
+        assertEquals("203.0.113.7", opened.open().ipAddress());
+        assertEquals("FR", opened.open().country());
+        // Elected separately, so it stays null even though the address was recorded.
+        assertNull(opened.open().userAgent());
     }
 
     @Test

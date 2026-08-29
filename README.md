@@ -196,6 +196,12 @@ String signature = Webhooks.sign("wh_1", timestamp, body, secret);
 | `WebhookStatusEvent` | `webhook.status` | the endpoint, its new state, and `previous()` |
 | `UnknownEvent` | anything else | `type()` and `raw()` |
 
+On the `open()` and `click()` blocks, `ipAddress()`, `country()` and `userAgent()` return a value
+only where the sending domain has elected it, and both settings are off by default. The server omits
+the key rather than sending an empty value, and the accessor returns `null` when it was not
+recorded. `country()` can be `null` even where the address was recorded, because it is resolved at
+the edge and is not available on every path.
+
 Two rules keep a receiver working across releases. A `type` this version does not recognize parses
 as `UnknownEvent` instead of raising, so a new platform event never breaks you. And `raw()` on every
 event returns the whole decoded payload, so a field added after this release still reaches you even

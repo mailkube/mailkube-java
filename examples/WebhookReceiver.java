@@ -92,7 +92,11 @@ void describe(WebhookEvent event) {
         case EmailSuppressedEvent e -> "suppressed " + e.suppression().recipients();
         case EmailScheduledEvent e -> "scheduled for " + e.scheduled().scheduledAt();
         case EmailFailedEvent e -> "dropped at dispatch: " + e.failed().reason();
-        case EmailOpenedEvent e -> "opened from " + e.open().ipAddress();
+        // ipAddress is null unless the sending domain elected to record it, so an example that
+        // prints it unguarded would teach the wrong lesson.
+        case EmailOpenedEvent e ->
+            "opened at " + e.open().timestamp()
+                + (e.open().ipAddress() == null ? "" : " from " + e.open().ipAddress());
         case EmailClickedEvent e -> "clicked " + e.click().link();
         case DomainStatusEvent e -> "domain " + e.domain() + " is now " + e.status();
         case WebhookStatusEvent e -> "endpoint " + e.endpointUrl() + " active=" + e.isActive();
