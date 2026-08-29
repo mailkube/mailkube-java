@@ -165,9 +165,13 @@ public final class EventCatalogue {
 
     private static EngagementContext engagement(Map<String, Object> data, String key) {
         Map<String, Object> nested = Json.object(data, key);
-        // These are the only camelCase keys the API sends.
+        // ipAddress and userAgent are the only camelCase keys the API sends. All three connection
+        // fields are absent unless the sending domain elected them, and Json.text yields null then.
         return new EngagementContext(
-                Json.text(nested, "ipAddress"), Json.text(nested, "userAgent"), Json.text(nested, "timestamp"));
+                Json.text(nested, "ipAddress"),
+                Json.text(nested, "userAgent"),
+                Json.text(nested, "timestamp"),
+                Json.text(nested, "country"));
     }
 
     private static ClickContext click(Map<String, Object> data) {
@@ -176,7 +180,8 @@ public final class EventCatalogue {
                 Json.text(nested, "ipAddress"),
                 Json.text(nested, "userAgent"),
                 Json.text(nested, "timestamp"),
-                Json.text(nested, "link"));
+                Json.text(nested, "link"),
+                Json.text(nested, "country"));
     }
 
     private static SuppressionContext suppression(Map<String, Object> data) {
