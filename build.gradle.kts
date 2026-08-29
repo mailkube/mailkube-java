@@ -4,7 +4,7 @@ plugins {
     signing
     jacoco
     pmd
-    id("com.diffplug.spotless") version "8.9.0"
+    id("com.diffplug.spotless") version "8.10.0"
 }
 
 group = "com.mailkube"
@@ -196,8 +196,8 @@ publishing {
                 }
                 developers {
                     developer {
-                        name = "Mailtactic, Corp."
-                        organization = "Mailtactic, Corp."
+                        name = "Mail Tactic Corporation"
+                        organization = "Mail Tactic Corporation"
                     }
                 }
                 scm {
