@@ -5,7 +5,9 @@
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-purple.svg)](CODE_OF_CONDUCT.md)
 
-The official Java SDK for mailkube
+The official Java SDK for [mailkube](https://mailkube.com).
+
+Full product and API documentation: [docs.mailkube.com/sdks/java](https://docs.mailkube.com/sdks/java).
 
 **Requires JVM 25 or newer.** That is a deliberate floor rather than an oversight: this SDK
 ships one synchronous client and relies on virtual threads for concurrency, which only became safe
