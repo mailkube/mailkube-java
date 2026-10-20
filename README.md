@@ -339,8 +339,9 @@ Runnable scripts, each a single file you can read top to bottom:
 | [`examples/SimpleSend.java`](examples/SimpleSend.java) | The smallest useful program: send one email, handle the errors that matter. |
 | [`examples/ListScheduledEmails.java`](examples/ListScheduledEmails.java) | One page for the metadata, then the lazy walk for the rows, read-only. |
 | [`examples/ManageScheduledEmails.java`](examples/ManageScheduledEmails.java) | Schedule a send, list and walk the collection, reschedule, and cancel a batch. |
+| [`examples/ScheduleBatch.java`](examples/ScheduleBatch.java) | Schedule three sends under one batch label, then move and cancel the batch as a unit. |
 | [`examples/CredentialInfo.java`](examples/CredentialInfo.java) | Describe the calling key, its plan and quota usage, without sending anything. |
-| [`examples/WebhookReceiver.java`](examples/WebhookReceiver.java) | A working endpoint: verify the signature, parse the event, handle every type. |
+| [`examples/WebhookReceiverHttp.java`](examples/WebhookReceiverHttp.java) | A working endpoint: verify the signature, parse the event, handle every type. |
 
 ## Extending this SDK
 
