@@ -306,6 +306,30 @@ try {
 
 Every API error also carries `requestId()` — quote it when contacting support.
 
+## Your API key
+
+`client.credential().info()` describes the key the client authenticates with: its domain,
+organization, source-IP allowlist, plan and send-quota usage.
+
+```java
+ApiKey key = client.credential().info();
+System.out.println(key.keyId() + " " + key.domain().name() + " " + key.organization().alias());
+
+if (key.plan() != null) {
+    for (ApiKeyQuota quota : key.plan().quotas()) {
+        System.out.println(quota.name() + " " + quota.used() + "/" + quota.limit() + " " + quota.period());
+    }
+}
+```
+
+The key is checked exactly as a send checks it, so a key that cannot send raises
+`AuthenticationException` (`invalid_api_key`): calling `info()` is how to verify a key. The call
+counts as a use of the key, and plan and quota figures can be up to 30 seconds old. `plan()` is null
+when the organization has no subscription, and a plan without a daily limit lists
+`emails_per_month` only. `remaining()` counts recipients, not messages.
+
+The client keeps the key it was built with. To use another key, build another client.
+
 ## More examples
 
 Runnable scripts, each a single file you can read top to bottom:
@@ -313,7 +337,9 @@ Runnable scripts, each a single file you can read top to bottom:
 | Example | Shows |
 |---|---|
 | [`examples/SimpleSend.java`](examples/SimpleSend.java) | The smallest useful program: send one email, handle the errors that matter. |
+| [`examples/ListScheduledEmails.java`](examples/ListScheduledEmails.java) | One page for the metadata, then the lazy walk for the rows, read-only. |
 | [`examples/ManageScheduledEmails.java`](examples/ManageScheduledEmails.java) | Schedule a send, list and walk the collection, reschedule, and cancel a batch. |
+| [`examples/CredentialInfo.java`](examples/CredentialInfo.java) | Describe the calling key, its plan and quota usage, without sending anything. |
 | [`examples/WebhookReceiver.java`](examples/WebhookReceiver.java) | A working endpoint: verify the signature, parse the event, handle every type. |
 
 ## Extending this SDK
