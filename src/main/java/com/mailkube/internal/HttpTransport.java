@@ -34,7 +34,7 @@ import java.util.Map;
  *       {@link AutoCloseable} in 21, so an injected client belongs to the caller's lifecycle.
  * </ul>
  */
-public final class HttpTransport implements SendTransport, ScheduledTransport {
+public final class HttpTransport implements SendTransport, ScheduledTransport, CredentialTransport {
 
     private static final System.Logger LOGGER = System.getLogger("com.mailkube");
 

@@ -146,6 +146,26 @@ public final class Json {
     }
 
     /**
+     * Read an array of strings off a decoded body.
+     *
+     * <p>Entries that are not strings are skipped rather than raising, for the reason given on
+     * {@link #objects(Map, String)}.
+     *
+     * @param body the decoded body
+     * @param key the field name
+     * @return the strings, in order; empty when the field is absent or not an array
+     */
+    public static List<String> strings(Map<String, Object> body, String key) {
+        List<String> out = new ArrayList<>();
+        for (Object entry : list(body, key)) {
+            if (entry instanceof String text) {
+                out.add(text);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /**
      * Read an array of objects off a decoded body.
      *
      * <p>Entries that are not objects are skipped rather than raising: an already-released client

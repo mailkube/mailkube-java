@@ -37,6 +37,7 @@ public final class MailkubeClient implements AutoCloseable {
 
     private final Emails emails;
     private final ScheduledEmails scheduledEmails;
+    private final Credential credential;
     private final HttpClient httpClient;
     private final boolean ownsHttpClient;
     private final Config config;
@@ -52,12 +53,13 @@ public final class MailkubeClient implements AutoCloseable {
         this.config = config;
         this.ownsHttpClient = builder.httpClient == null;
         this.httpClient = ownsHttpClient ? defaultHttpClient(config) : builder.httpClient;
-        // One transport object satisfies both narrow interfaces. The resources still depend on one
-        // interface each, so a test can substitute either capability without touching the other.
+        // One transport object satisfies every narrow interface. The resources still depend on one
+        // interface each, so a test can substitute any capability without touching the others.
         HttpTransport http = new HttpTransport(config, this.httpClient, observerFor(builder, config));
         this.emails = new Emails(builder.transport != null ? builder.transport : http);
         this.scheduledEmails =
                 new ScheduledEmails(builder.scheduledTransport != null ? builder.scheduledTransport : http);
+        this.credential = new Credential(http);
     }
 
     /**
@@ -85,6 +87,15 @@ public final class MailkubeClient implements AutoCloseable {
      */
     public ScheduledEmails scheduledEmails() {
         return scheduledEmails;
+    }
+
+    /**
+     * The credential namespace: the API key this client authenticates with.
+     *
+     * @return the resource
+     */
+    public Credential credential() {
+        return credential;
     }
 
     /**

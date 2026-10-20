@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import com.mailkube.model.ApiKey;
+import com.mailkube.model.ApiKeyPlan;
 import com.mailkube.model.MessageContext;
 import com.mailkube.model.PageSteps;
 import com.mailkube.model.Pagination;
@@ -34,6 +36,9 @@ class ModelGuardsTest {
         assertEquals(
                 List.of(), new ScheduledEmail("id", null, null, null, null, null, null, null, null, null, null).tags());
         assertEquals(List.of(), new ScheduledEmailPage(null, null).data());
+        assertEquals(
+                List.of(), new ApiKey(null, null, null, null, null, null, null, null, null, null).allowedSourceIps());
+        assertEquals(List.of(), new ApiKeyPlan(null, null, null, null).quotas());
     }
 
     @Test
