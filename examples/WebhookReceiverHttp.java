@@ -2,7 +2,7 @@
 //
 //   export MAILKUBE_WEBHOOK_SECRET=whsec_...
 //   ./gradlew jar
-//   java -cp build/libs/mailkube-java-*.jar examples/WebhookReceiver.java 8080
+//   java -cp build/libs/mailkube-java-*.jar examples/WebhookReceiverHttp.java 8080
 //
 // Point a mailkube webhook endpoint at http://<host>:8080/webhooks and watch it print each event.
 // The server here is the JDK's own com.sun.net.httpserver, so the example needs nothing installed;

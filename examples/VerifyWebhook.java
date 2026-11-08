@@ -3,7 +3,7 @@
 //   ./gradlew jar
 //   java -cp build/libs/mailkube-java-*.jar examples/VerifyWebhook.java fixture.json [more.json...]
 //
-// examples/WebhookReceiver.java shows verification inside an HTTP handler. This one strips that
+// examples/WebhookReceiverHttp.java shows verification inside an HTTP handler. This one strips that
 // away: it feeds captured deliveries straight to verifySignature so you can see exactly what is
 // accepted and what is not. Useful for testing your own handler against saved payloads.
 //
